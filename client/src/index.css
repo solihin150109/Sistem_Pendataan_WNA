@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary-blue: #001f3f; /* Deep Navy Blue */
+  --color-accent-gold: #d4af37; /* Classic Gold */
+  --color-bg-light: #ffffff;
+  --color-text-dark: #000000;
+  --color-text-muted: #64748b;
+  --color-border: #e2e8f0;
+  --color-success: #10b981;
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html, body, #root {
+    @apply h-full w-full bg-slate-50 text-slate-900 antialiased;
+    font-family: var(--font-sans);
+  }
+  
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    @apply tracking-tight;
+  }
+}
+
+/* Ensure images don't break layout */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Leaflet container sizing */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-50;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
+}
+
+/* Pastikan map container memiliki ukuran */
+.h-full {
+  height: 100%;
+}
+
+.w-full {
+  width: 100%;
+}
+
+/* Fix untuk Google Maps */
+.gm-style iframe + div {
+  border-radius: 24px;
+}
+
+/* Style untuk Google Maps Info Window */
+.gm-style .gm-style-iw-c {
+  border-radius: 20px !important;
+  padding: 0 !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+}
+
+.gm-style .gm-style-iw-d {
+  overflow: auto !important;
+  max-height: none !important;
+}
+
+.gm-style .gm-style-iw-tc {
+  display: none !important;
+}
+
+/* Smooth hover effects */
+.map-marker:hover {
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
+}

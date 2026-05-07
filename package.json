@@ -1,0 +1,22 @@
+{
+  "name": "wna-monitoring-app",
+  "version": "1.0.0",
+  "description": "Aplikasi Monitoring Warga Negara Asing - Kantor Imigrasi Jambi",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "server": "cd server && npm start",
+    "client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "node server/server.js",
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "init-db": "cd server && node scripts/initDatabase.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

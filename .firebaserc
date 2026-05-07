@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "kanim-jambi"
+  },
+  "targets": {
+    "kanim-jambi": {
+      "hosting": {
+        "default": [
+          "client/dist"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
