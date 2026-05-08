@@ -2,29 +2,30 @@ const admin = require('firebase-admin');
 
 let serviceAccount;
 
-// Periksa apakah sedang di Vercel (Production) atau di Laptop (Development)
+// Logika untuk mendeteksi Environment Vercel vs Lokal
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
-    // Ambil data dari Environment Variable Vercel
+    // Parsing JSON dari Environment Variable Vercel
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     
-    // PERBAIKAN KRUSIAL: Memperbaiki format private_key agar valid di server Linux/Vercel
+    // Perbaikan karakter newline (\n) agar Private Key terbaca benar oleh Google
     if (serviceAccount.private_key) {
       serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
     }
-  } catch (error) {
-    console.error('❌ Gagal memproses FIREBASE_SERVICE_ACCOUNT JSON:', error.message);
+  } catch (err) {
+    console.error("❌ Error parsing FIREBASE_SERVICE_ACCOUNT:", err.message);
   }
 } else {
-  // Jika sedang di laptop, gunakan file lokal seperti biasa
+  // Jika di laptop, pakai file lokal
   try {
-    serviceAccount = require('./serviceAccountKey.json');
-  } catch (error) {
-    console.error('❌ File serviceAccountKey.json tidak ditemukan di lokal!');
+    serviceAccount = require('../serviceAccountKey.json');
+  } catch (err) {
+    console.error("❌ File serviceAccountKey.json tidak ditemukan di lokal!");
   }
 }
 
-const databaseURL = 'https://pendataanwna-default-rtdb.asia-southeast1.firebasedatabase.app';
+// Pastikan URL database ini sesuai dengan Firebase Console kamu
+const databaseURL = "https://pendataanwna-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 if (!admin.apps.length) {
   try {
@@ -32,9 +33,9 @@ if (!admin.apps.length) {
       credential: admin.credential.cert(serviceAccount),
       databaseURL: databaseURL
     });
-    console.log('✅ Firebase Admin initialized (Realtime Database)');
-  } catch (error) {
-    console.error('❌ Firebase initialization failed:', error.message);
+    console.log('✅ Firebase Admin SDK Berhasil Terhubung');
+  } catch (err) {
+    console.error('❌ Inisialisasi Firebase Gagal:', err.message);
   }
 }
 
