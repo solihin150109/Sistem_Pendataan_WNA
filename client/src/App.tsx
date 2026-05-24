@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import DataKategori from './pages/DataKategori';
 import MapPage from './pages/MapPage';
 import Profile from './pages/Profile';
+import UsersPage from './pages/UsersPage';
+import ReportsPage from './pages/ReportsPage';
 
 export default function App() {
   return (
@@ -22,6 +24,8 @@ export default function App() {
             <Route path="data/itap" element={<DataKategori type="ITAP" />} />
             <Route path="map" element={<MapPage />} />
             <Route path="profile" element={<Profile />} />
+            <Route path="users" element={<UsersPage />} />
+            <Route path="reports" element={<ReportsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

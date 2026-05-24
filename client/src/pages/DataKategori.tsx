@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { IzinTinggalType } from '../types';
-import { Database, FileText, Plus, MapPin, Download, X, Loader2, CheckCircle2, AlertTriangle, Navigation } from 'lucide-react';
+import { Database, FileText, Plus, MapPin, Download, X, Loader2, CheckCircle2, AlertTriangle, Navigation, Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import { api } from '../api';
+import { useAuth } from '../AuthContext';
 
 interface DataKategoriProps {
   type: IzinTinggalType;
@@ -22,6 +23,7 @@ interface WNA {
 }
 
 export default function DataKategori({ type }: DataKategoriProps) {
+  const { isAdmin, user } = useAuth(); // Tambahkan ini
   const [data, setData] = useState<WNA[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -37,7 +39,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
     namaLengkap: '',
     noPaspor: '',
     negara: '',
-    type: type,
     sponsor: '',
     alamat: '',
     latitude: '',
@@ -77,6 +78,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
   };
 
   const handleExport = async () => {
+    // Export tetap bisa dilakukan oleh semua user
     setExporting(true);
     setError('');
     try {
@@ -105,7 +107,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
       namaLengkap: '',
       noPaspor: '',
       negara: '',
-      type: type,
       sponsor: '',
       alamat: '',
       latitude: '',
@@ -114,7 +115,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
     setError('');
   };
 
-  // Ambil lokasi saat ini menggunakan geolocation browser (GRATIS, tanpa API)
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
       setError('Browser Anda tidak mendukung geolokasi');
@@ -167,10 +167,17 @@ export default function DataKategori({ type }: DataKategoriProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Cek apakah user adalah Administrator
+    if (!isAdmin) {
+      setError('Anda tidak memiliki izin untuk menambahkan data. Hanya Administrator yang dapat menambah data.');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+    
     setSubmitting(true);
     setError('');
     
-    // Validasi
     if (!formData.namaLengkap.trim()) {
       setError('Nama lengkap wajib diisi');
       setSubmitting(false);
@@ -199,10 +206,20 @@ export default function DataKategori({ type }: DataKategoriProps) {
     
     try {
       const submitData = {
-        ...formData,
+        namaLengkap: formData.namaLengkap.trim(),
+        noPaspor: formData.noPaspor.trim(),
+        negara: formData.negara,
+        type: type,
+        sponsor: formData.sponsor.trim(),
+        alamat: formData.alamat.trim(),
+        domisili: 'Kota Jambi',
         latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-        longitude: formData.longitude ? parseFloat(formData.longitude) : null
+        longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+        tanggalMasuk: new Date().toISOString().split('T')[0],
+        status: 'ACTIVE'
       };
+      
+      console.log('Submitting data:', submitData);
       
       const response = await api.createWNA(submitData);
       
@@ -224,6 +241,13 @@ export default function DataKategori({ type }: DataKategoriProps) {
   };
 
   const handleDelete = async (id: string) => {
+    // Cek apakah user adalah Administrator
+    if (!isAdmin) {
+      setError('Anda tidak memiliki izin untuk menghapus data. Hanya Administrator yang dapat menghapus data.');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+    
     if (confirm('Yakin ingin menghapus data ini?')) {
       try {
         const response = await api.deleteWNA(id);
@@ -258,7 +282,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Success/Error Messages */}
       {successMessage && (
         <div className="fixed top-24 right-4 z-50 animate-in slide-in-from-right-5 duration-300">
           <div className="bg-emerald-500 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2">
@@ -292,9 +315,10 @@ export default function DataKategori({ type }: DataKategoriProps) {
               <FileText className="h-3 w-3" />
               Registry Code: {type}
             </div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <div className="h-1 w-1 rounded-full bg-slate-300"></div>
-              Wilayah Kerja Jambi
+            {/* Role Badge */}
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${isAdmin ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+              <Shield className="h-3 w-3" />
+              {isAdmin ? 'Administrator (Full Access)' : 'Operator (Read Only)'}
             </div>
           </div>
         </div>
@@ -308,13 +332,18 @@ export default function DataKategori({ type }: DataKategoriProps) {
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             {exporting ? 'Mengekspor...' : 'Export Data'}
           </button>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-primary-blue text-white rounded-2xl font-bold text-sm hover:bg-primary-blue/90 transition-all"
-          >
-            <Plus className="h-4 w-4" />
-            Tambah Data
-          </button>
+          
+          {/* Tombol Tambah Data - Hanya untuk Admin */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 px-5 py-3 bg-primary-blue text-white rounded-2xl font-bold text-sm hover:bg-primary-blue/90 transition-all"
+            >
+              <Plus className="h-4 w-4" />
+              Tambah Data
+            </button>
+          )}
+          
           <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Total Entitas</p>
@@ -324,7 +353,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
         </div>
       </div>
 
-      {/* Table */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
@@ -343,8 +371,8 @@ export default function DataKategori({ type }: DataKategoriProps) {
               <tbody>
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-slate-400">
-                      Belum ada data. Klik "Tambah Data" untuk menambahkan.
+                    <td colSpan={7} className="text-center p-8 text-slate-400">
+                      Belum ada data.
                     </td>
                   </tr>
                 ) : (
@@ -375,12 +403,16 @@ export default function DataKategori({ type }: DataKategoriProps) {
                         </span>
                       </td>
                       <td className="p-4">
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="text-red-500 hover:text-red-700 text-sm font-medium"
-                        >
-                          Hapus
-                        </button>
+                        {isAdmin ? (
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="text-red-500 hover:text-red-700 text-sm font-medium"
+                          >
+                            Hapus
+                          </button>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Tidak ada akses</span>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -391,8 +423,8 @@ export default function DataKategori({ type }: DataKategoriProps) {
         </div>
       </motion.div>
 
-      {/* Modal Tambah Data */}
-      {showModal && (
+      {/* Modal Tambah Data - Hanya muncul untuk Admin */}
+      {showModal && isAdmin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
@@ -462,7 +494,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
                 />
               </div>
               
-              {/* Koordinat dengan tombol ambil lokasi */}
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-500 mb-1">Koordinat Lokasi (Opsional)</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -490,22 +521,15 @@ export default function DataKategori({ type }: DataKategoriProps) {
                   type="button"
                   onClick={getCurrentLocation}
                   disabled={gettingLocation}
-                  className="w-full py-3 rounded-xl bg-primary-blue/10 text-primary-blue text-sm font-bold hover:bg-primary-blue/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-3 rounded-xl bg-primary-blue/10 text-primary-blue text-sm font-bold hover:bg-primary-blue/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {gettingLocation ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Navigation className="h-4 w-4" />
                   )}
-                  {gettingLocation ? 'Mengambil lokasi...' : '📍 Ambil Lokasi Saya (Gratis)'}
+                  {gettingLocation ? 'Mengambil lokasi...' : '📍 Ambil Lokasi Saya'}
                 </button>
-                
-                <div className="bg-slate-50 p-3 rounded-xl">
-                  <p className="text-[11px] text-slate-500 flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
-                    <span>Koordinat bersifat opsional. Jika diisi, data akan muncul di peta pemantauan. Klik tombol di atas untuk mengambil lokasi Anda saat ini secara otomatis (gratis, tanpa API key).</span>
-                  </p>
-                </div>
               </div>
               
               <div className="flex gap-3 pt-4">
@@ -554,9 +578,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
             <div className="mt-4">
               <p className="text-sm text-slate-600 mb-2">
                 <strong>Alamat:</strong> {selectedWNA.alamat}
-              </p>
-              <p className="text-sm text-slate-600 mb-4">
-                <strong>Koordinat:</strong> {selectedWNA.latitude}, {selectedWNA.longitude}
               </p>
               <div className="flex gap-3">
                 <a

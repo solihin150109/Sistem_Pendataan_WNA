@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { 
-  Users, Globe, Briefcase, ShieldCheck, TrendingUp, MapPin, ArrowUpRight, Navigation
+  Users, Globe, Briefcase, ShieldCheck, TrendingUp, MapPin, ArrowUpRight, Navigation, Shield
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { api } from '../api';
+import { useAuth } from '../AuthContext';
 
 const COLORS = ['rgb(0, 31, 63)', 'rgb(212, 175, 55)', 'rgb(16, 185, 129)', 'rgb(245, 158, 11)'];
 
@@ -17,6 +18,7 @@ interface DashboardStats {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth(); // Tambahkan ini
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -64,6 +66,22 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Welcome Banner with Role Info */}
+      <div className="bg-gradient-to-r from-primary-blue/10 to-primary-blue/5 rounded-3xl p-6 border border-primary-blue/20">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              Selamat Datang, {user?.name || user?.username}
+            </h1>
+            <p className="text-slate-500 mt-1">
+              {isAdmin 
+                ? 'Anda memiliki akses penuh untuk mengelola data WNA' 
+                : 'Anda memiliki akses hanya baca untuk melihat data WNA'}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statsCards.map((stat, i) => (

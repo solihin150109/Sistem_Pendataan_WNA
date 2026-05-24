@@ -23,6 +23,14 @@ interface Notification {
   userId?: string;
 }
 
+interface UserProfile {
+  username: string;
+  name: string;
+  email: string;
+  role: string;
+  photo?: string;
+}
+
 function cn(...inputs: any[]) {
   return inputs.filter(Boolean).join(' ');
 }
@@ -37,6 +45,8 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [photoError, setPhotoError] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout>();
 
   const getTitle = () => {
@@ -48,8 +58,24 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     if (path.includes('/data/itap')) return 'ITAP Archives';
     if (path === '/map') return 'Pemetaan Wilayah';
     if (path === '/profile') return 'Admin Profile';
-    return 'SI-WNA System';
+    if (path === '/users') return 'Manajemen Pengguna';
+    if (path === '/reports') return 'Laporan & Statistik';
+    return 'SIPAGI System';
   };
+
+  // Fetch profile untuk mendapatkan foto
+  const fetchProfile = useCallback(async () => {
+    if (!user) return;
+    try {
+      const response = await api.getProfile();
+      if (response && response.success) {
+        setProfile(response.data);
+        setPhotoError(false);
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    }
+  }, [user]);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -80,8 +106,9 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
 
   useEffect(() => {
     if (user) {
+      fetchProfile();
       fetchNotifications();
-      // Polling every 30 seconds untuk update notifikasi
+      // Polling every 30 seconds
       pollingRef.current = setInterval(() => {
         fetchUnreadCount();
       }, 30000);
@@ -89,7 +116,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [user, fetchNotifications, fetchUnreadCount]);
+  }, [user, fetchProfile, fetchNotifications, fetchUnreadCount]);
 
   const markAsRead = async (id: string) => {
     try {
@@ -146,6 +173,31 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays < 7) return `${diffDays} hari lalu`;
     return date.toLocaleDateString('id-ID');
+  };
+
+  // Get avatar display - foto profil jika ada
+  const getAvatarContent = () => {
+    const photo = profile?.photo;
+    const name = user?.name || profile?.name || 'User';
+    const initial = name.charAt(0).toUpperCase();
+    
+    if (photo && !photoError) {
+      return (
+        <img 
+          src={photo} 
+          alt={name}
+          className="h-full w-full object-cover"
+          onError={() => setPhotoError(true)}
+        />
+      );
+    }
+    
+    // Fallback ke inisial jika foto tidak ada atau error
+    return (
+      <div className="h-full w-full rounded-xl bg-gradient-to-br from-primary-blue to-black flex items-center justify-center text-sm font-bold text-accent-gold">
+        {initial}
+      </div>
+    );
   };
 
   return (
@@ -270,11 +322,13 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} 
             className="flex items-center gap-3 p-1.5 rounded-2xl hover:bg-slate-50 transition-all border border-transparent hover:border-slate-200 group"
           >
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary-blue to-black flex items-center justify-center text-sm font-bold text-accent-gold shadow-lg group-hover:scale-105 transition-transform">
-              {user?.name?.charAt(0) || 'A'}
+            <div className="h-10 w-10 rounded-xl overflow-hidden shadow-lg group-hover:scale-105 transition-transform bg-gradient-to-br from-primary-blue to-black">
+              {getAvatarContent()}
             </div>
             <div className="flex flex-col items-start hidden sm:flex">
-              <span className="text-[11px] font-bold text-slate-900 uppercase tracking-tight leading-none">{user?.name}</span>
+              <span className="text-[11px] font-bold text-slate-900 uppercase tracking-tight leading-none">
+                {user?.name || profile?.name || 'User'}
+              </span>
               <span className="text-[9px] font-bold text-accent-gold uppercase tracking-widest mt-1.5">
                 {user?.role === 'Administrator' ? 'Administrator' : 'Operator'}
               </span>
@@ -296,12 +350,31 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                   initial={{ opacity: 0, scale: 0.95, y: 10 }} 
                   animate={{ opacity: 1, scale: 1, y: 0 }} 
                   exit={{ opacity: 0, scale: 0.95, y: 10 }} 
-                  className="absolute right-0 mt-3 w-64 rounded-[32px] bg-white border border-slate-200 shadow-2xl z-50 p-3"
+                  className="absolute right-0 mt-3 w-72 rounded-[32px] bg-white border border-slate-200 shadow-2xl z-50 p-3"
                 >
-                  <div className="p-5 border-b border-slate-100">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1">Identitas Sistem</p>
-                    <p className="text-sm font-bold text-slate-900">{user?.name}</p>
-                    <p className="text-[10px] font-bold text-primary-blue mt-1 uppercase">{user?.role}</p>
+                  <div className="flex items-center gap-4 p-4 border-b border-slate-100">
+                    {/* Avatar besar di menu dropdown */}
+                    <div className="h-16 w-16 rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-primary-blue to-black">
+                      {profile?.photo && !photoError ? (
+                        <img 
+                          src={profile.photo} 
+                          alt={profile.name}
+                          className="h-full w-full object-cover"
+                          onError={() => setPhotoError(true)}
+                        />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center text-2xl font-bold text-accent-gold">
+                          {(user?.name || profile?.name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-slate-900">{user?.name || profile?.name}</p>
+                      <p className="text-[10px] font-bold text-primary-blue mt-0.5 uppercase tracking-wider">
+                        {user?.role === 'Administrator' ? 'Administrator' : 'Operator'}
+                      </p>
+                      <p className="text-[9px] text-slate-400 mt-1 font-mono">{user?.username}</p>
+                    </div>
                   </div>
                   <div className="py-2">
                     <button 

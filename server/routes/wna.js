@@ -7,15 +7,29 @@ const { body, validationResult } = require('express-validator');
 // Helper function untuk membuat notifikasi
 async function createNotification(userId, userName, title, message, type, relatedId = null) {
   try {
-    const notificationsRef = db.ref('notifications');
-    await notificationsRef.push({
+    const notificationsRef = db.ref('user_notifications');
+    await notificationsRef.child(userId).push({
       userId: userId,
       userName: userName,
       title: title,
       message: message,
-      type: type, // 'success', 'info', 'warning', 'error'
+      type: type,
       relatedId: relatedId,
       read: false,
+      readAt: null,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Also save to global
+    await db.ref('notifications').push({
+      userId: userId,
+      userName: userName,
+      title: title,
+      message: message,
+      type: type,
+      relatedId: relatedId,
+      read: false,
+      readAt: null,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -28,8 +42,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const { type, negara, status, limit = 1000 } = req.query;
     
-    let query = db.ref('wna');
-    const snapshot = await query.once('value');
+    const snapshot = await db.ref('wna').once('value');
     let data = snapshot.val();
     
     let wnaList = [];
@@ -53,7 +66,7 @@ router.get('/', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching WNA:', error);
-      res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -123,17 +136,24 @@ router.get('/stats/dashboard', authenticateToken, async (req, res) => {
 
 // CREATE new WNA
 router.post('/', authenticateToken, [
-  body('namaLengkap').notEmpty().trim(),
-  body('noPaspor').notEmpty().trim(),
-  body('negara').notEmpty(),
-  body('type').isIn(['VOA', 'ITK', 'ITAS', 'ITAP']),
-  body('sponsor').notEmpty(),
-  body('alamat').notEmpty(),
-  body('domisili').notEmpty()
+  body('namaLengkap').notEmpty().withMessage('Nama lengkap wajib diisi').trim(),
+  body('noPaspor').notEmpty().withMessage('Nomor paspor wajib diisi').trim(),
+  body('negara').notEmpty().withMessage('Negara asal wajib diisi'),
+  body('type').isIn(['VOA', 'ITK', 'ITAS', 'ITAP']).withMessage('Tipe izin tidak valid'),
+  body('sponsor').notEmpty().withMessage('Sponsor wajib diisi'),
+  body('alamat').notEmpty().withMessage('Alamat wajib diisi'),
+  body('domisili').optional().isString(),
+  body('latitude').optional().isNumeric(),
+  body('longitude').optional().isNumeric()
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ success: false, errors: errors.array() });
+    console.log('Validation errors:', errors.array());
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Validasi gagal',
+      errors: errors.array() 
+    });
   }
   
   try {
@@ -154,35 +174,56 @@ router.post('/', authenticateToken, [
     }
     
     const newRef = db.ref('wna').push();
+    const domisili = req.body.domisili || 'Kota Jambi';
+    
     const wnaData = {
-      ...req.body,
+      namaLengkap: req.body.namaLengkap,
+      noPaspor: req.body.noPaspor,
+      negara: req.body.negara,
+      type: req.body.type,
+      sponsor: req.body.sponsor,
+      alamat: req.body.alamat,
+      domisili: domisili,
+      latitude: req.body.latitude ? parseFloat(req.body.latitude) : null,
+      longitude: req.body.longitude ? parseFloat(req.body.longitude) : null,
+      tanggalMasuk: req.body.tanggalMasuk || new Date().toISOString().split('T')[0],
+      tanggalBerlaku: req.body.tanggalBerlaku || null,
+      status: req.body.status || 'ACTIVE',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: req.user.username,
-      status: 'ACTIVE'
+      createdByName: req.user.name || req.user.username
     };
     
     await newRef.set(wnaData);
     
     // Create notification
-    await createNotification(
-      req.user.username,
-      req.user.name,
-      'Data WNA Baru Ditambahkan',
-      `${req.user.name} menambahkan data WNA baru: ${req.body.namaLengkap} (${req.body.noPaspor})`,
-      'success',
-      newRef.key
-    );
+    try {
+      await createNotification(
+        req.user.username,
+        req.user.name || req.user.username,
+        'Data WNA Baru Ditambahkan',
+        `${req.user.name || req.user.username} menambahkan data WNA baru: ${req.body.namaLengkap} (${req.body.noPaspor})`,
+        'success',
+        newRef.key
+      );
+    } catch (notifError) {
+      console.error('Notification error:', notifError.message);
+    }
     
     // Log activity
-    await db.ref('activity_logs').push({
-      action: 'CREATE_WNA',
-      wnaId: newRef.key,
-      username: req.user.username,
-      userName: req.user.name,
-      timestamp: new Date().toISOString(),
-      data: { namaLengkap: req.body.namaLengkap, noPaspor: req.body.noPaspor }
-    });
+    try {
+      await db.ref('activity_logs').push({
+        action: 'CREATE_WNA',
+        wnaId: newRef.key,
+        username: req.user.username,
+        userName: req.user.name || req.user.username,
+        timestamp: new Date().toISOString(),
+        data: { namaLengkap: req.body.namaLengkap, noPaspor: req.body.noPaspor }
+      });
+    } catch (logError) {
+      console.error('Activity log error:', logError.message);
+    }
     
     res.status(201).json({ 
       success: true, 
@@ -190,6 +231,7 @@ router.post('/', authenticateToken, [
       id: newRef.key 
     });
   } catch (error) {
+    console.error('Error creating WNA:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -213,25 +255,6 @@ router.put('/:id', authenticateToken, async (req, res) => {
     
     await db.ref(`wna/${req.params.id}`).update(updateData);
     
-    // Create notification
-    await createNotification(
-      req.user.username,
-      req.user.name,
-      'Data WNA Diperbarui',
-      `${req.user.name} memperbarui data WNA: ${existing.namaLengkap}`,
-      'info',
-      req.params.id
-    );
-    
-    // Log activity
-    await db.ref('activity_logs').push({
-      action: 'UPDATE_WNA',
-      wnaId: req.params.id,
-      username: req.user.username,
-      userName: req.user.name,
-      timestamp: new Date().toISOString()
-    });
-    
     res.json({ success: true, message: 'Data WNA berhasil diupdate' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -247,26 +270,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'WNA not found' });
     }
-    
-    // Create notification before delete
-    await createNotification(
-      req.user.username,
-      req.user.name,
-      'Data WNA Dihapus',
-      `${req.user.name} menghapus data WNA: ${existing.namaLengkap} (${existing.noPaspor})`,
-      'warning',
-      req.params.id
-    );
-    
-    // Log activity
-    await db.ref('activity_logs').push({
-      action: 'DELETE_WNA',
-      wnaId: req.params.id,
-      username: req.user.username,
-      userName: req.user.name,
-      timestamp: new Date().toISOString(),
-      data: existing
-    });
     
     await db.ref(`wna/${req.params.id}`).remove();
     
@@ -291,7 +294,6 @@ router.get('/export/all', authenticateToken, async (req, res) => {
       ...data[key]
     }));
     
-    // Create CSV
     const headers = ['ID', 'Nama Lengkap', 'No Paspor', 'Negara', 'Tipe Izin', 'Sponsor', 'Alamat', 'Domisili', 'Latitude', 'Longitude', 'Status', 'Tanggal Dibuat', 'Dibuat Oleh'];
     
     const csvRows = [headers.join(',')];
@@ -317,19 +319,9 @@ router.get('/export/all', authenticateToken, async (req, res) => {
     
     const csv = csvRows.join('\n');
     
-    // Log export activity
-    await db.ref('activity_logs').push({
-      action: 'EXPORT_DATA',
-      username: req.user.username,
-      userName: req.user.name,
-      timestamp: new Date().toISOString(),
-      data: { totalRecords: wnaList.length }
-    });
-    
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename=wna_export_${new Date().toISOString().split('T')[0]}.csv`);
     res.send(csv);
-    
   } catch (error) {
     console.error('Export error:', error);
     res.status(500).json({ success: false, message: error.message });

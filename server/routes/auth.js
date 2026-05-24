@@ -10,22 +10,53 @@ router.post('/login', [
   body('username').notEmpty().trim().escape(),
   body('password').notEmpty()
 ], async (req, res) => {
+  console.log('Login attempt:', req.body.username);
+  
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    console.log('Validation errors:', errors.array());
     return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const { username, password } = req.body;
 
   try {
-    // Get user from Realtime Database
-    const snapshot = await db.ref(`users/${username}`).once('value');
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET not set');
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Server configuration error' 
+      });
+    }
+
+    console.log('Fetching user from database:', `users/${username}`);
+    
+    let snapshot;
+    try {
+      snapshot = await db.ref(`users/${username}`).once('value');
+    } catch (dbError) {
+      console.error('Database read error:', dbError.message);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database access error. Please check security rules.' 
+      });
+    }
+    
     const userData = snapshot.val();
+    console.log('User data found:', userData ? 'Yes' : 'No');
 
     if (!userData) {
       return res.status(401).json({ 
         success: false, 
         message: 'Username atau password salah' 
+      });
+    }
+
+    if (!userData.password) {
+      console.error('Password not found for user:', username);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'User data corrupted' 
       });
     }
 
@@ -49,12 +80,16 @@ router.post('/login', [
     );
 
     // Log login activity
-    await db.ref('activity_logs').push({
-      username: username,
-      action: 'LOGIN',
-      timestamp: new Date().toISOString(),
-      ip: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress
-    });
+    try {
+      await db.ref('activity_logs').push({
+        username: username,
+        action: 'LOGIN',
+        timestamp: new Date().toISOString(),
+        ip: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress
+      });
+    } catch (logError) {
+      console.error('Failed to log activity:', logError.message);
+    }
 
     res.json({
       success: true,
@@ -71,7 +106,7 @@ router.post('/login', [
     console.error('Login error:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Terjadi kesalahan server' 
+      message: 'Terjadi kesalahan server: ' + error.message 
     });
   }
 });
@@ -122,6 +157,7 @@ router.post('/change-password', [
 
     res.json({ success: true, message: 'Password berhasil diubah' });
   } catch (error) {
+    console.error('Change password error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

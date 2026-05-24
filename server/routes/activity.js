@@ -3,37 +3,90 @@ const router = express.Router();
 const { db } = require('../config/firebase');
 const { authenticateToken } = require('../middleware/auth');
 
+// Helper function to create activity log
+async function createActivityLog(username, userName, action, data = null) {
+  try {
+    await db.ref('activity_logs').push({
+      username: username,
+      userName: userName || username,
+      action: action,
+      timestamp: new Date().toISOString(),
+      data: data,
+      ip: null
+    });
+  } catch (error) {
+    console.error('Error creating activity log:', error);
+  }
+}
+
+// Helper function to create notification
+async function createNotification(userId, userName, title, message, type, relatedId = null) {
+  try {
+    const userNotificationsRef = db.ref(`user_notifications/${userId}`);
+    const newNotifRef = await userNotificationsRef.push({
+      userId: userId,
+      userName: userName,
+      title: title,
+      message: message,
+      type: type,
+      relatedId: relatedId,
+      read: false,
+      readAt: null,
+      timestamp: new Date().toISOString()
+    });
+    
+    await db.ref('notifications').push({
+      userId: userId,
+      userName: userName,
+      title: title,
+      message: message,
+      type: type,
+      relatedId: relatedId,
+      read: false,
+      readAt: null,
+      timestamp: new Date().toISOString()
+    });
+    
+    return newNotifRef.key;
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    return null;
+  }
+}
+
 // GET activity logs
 router.get('/logs', authenticateToken, async (req, res) => {
   try {
-    var limit = parseInt(req.query.limit) || 100;
-    var action = req.query.action;
-    var username = req.query.username;
+    const limit = parseInt(req.query.limit) || 100;
+    const action = req.query.action;
+    const username = req.query.username;
     
-    var snapshot = await db.ref('activity_logs')
+    const snapshot = await db.ref('activity_logs')
       .orderByChild('timestamp')
       .limitToLast(limit)
       .once('value');
     
-    var logs = [];
-    var data = snapshot.val();
+    let logs = [];
+    const data = snapshot.val();
+    
     if (data) {
-      var keys = Object.keys(data);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
+      const keys = Object.keys(data);
+      for (let i = keys.length - 1; i >= 0; i--) {
+        const key = keys[i];
         logs.push({ id: key, ...data[key] });
       }
-      logs.reverse();
       
       if (action) {
-        logs = logs.filter(function(log) { return log.action === action; });
+        logs = logs.filter(log => log.action === action);
       }
       if (username) {
-        logs = logs.filter(function(log) { return log.username === username; });
+        logs = logs.filter(log => log.username === username);
       }
     }
+    
     res.json({ success: true, data: logs, total: logs.length });
   } catch (error) {
+    console.error('Error fetching activity logs:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -41,29 +94,28 @@ router.get('/logs', authenticateToken, async (req, res) => {
 // GET notifications
 router.get('/notifications', authenticateToken, async (req, res) => {
   try {
-    var username = req.user.username;
-    var snapshot = await db.ref('notifications')
-      .orderByChild('userId')
-      .equalTo(username)
+    const username = req.user.username;
+    const limit = parseInt(req.query.limit) || 50;
+    
+    let snapshot = await db.ref(`user_notifications/${username}`)
+      .orderByChild('timestamp')
+      .limitToLast(limit)
       .once('value');
     
-    var notifications = [];
-    var data = snapshot.val();
+    let notifications = [];
+    let data = snapshot.val();
+    
     if (data) {
-      var keys = Object.keys(data);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        if (data[key].userId === username) {
-          notifications.push({ id: key, ...data[key] });
-        }
+      const keys = Object.keys(data);
+      for (let i = keys.length - 1; i >= 0; i--) {
+        const key = keys[i];
+        notifications.push({ id: key, ...data[key] });
       }
     }
-    notifications.sort(function(a, b) {
-      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-    });
+    
     res.json({ success: true, data: notifications, total: notifications.length });
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error fetching notifications:', error);
     res.json({ success: true, data: [], total: 0 });
   }
 });
@@ -71,11 +123,15 @@ router.get('/notifications', authenticateToken, async (req, res) => {
 // Mark notification as read
 router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
   try {
-    var id = req.params.id;
-    await db.ref('notifications/' + id).update({
+    const { id } = req.params;
+    const username = req.user.username;
+    const timestamp = new Date().toISOString();
+    
+    await db.ref(`user_notifications/${username}/${id}`).update({
       read: true,
-      readAt: new Date().toISOString()
+      readAt: timestamp
     });
+    
     res.json({ success: true, message: 'Marked as read' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -85,27 +141,28 @@ router.put('/notifications/:id/read', authenticateToken, async (req, res) => {
 // Mark all as read
 router.put('/notifications/read-all', authenticateToken, async (req, res) => {
   try {
-    var username = req.user.username;
-    var snapshot = await db.ref('notifications')
-      .orderByChild('userId')
-      .equalTo(username)
+    const username = req.user.username;
+    const timestamp = new Date().toISOString();
+    
+    const snapshot = await db.ref(`user_notifications/${username}`)
+      .orderByChild('read')
+      .equalTo(false)
       .once('value');
     
-    var data = snapshot.val();
+    const data = snapshot.val();
     if (data) {
-      var updates = {};
-      var keys = Object.keys(data);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        if (!data[key].read) {
-          updates[key + '/read'] = true;
-          updates[key + '/readAt'] = new Date().toISOString();
-        }
+      const updates = {};
+      const keys = Object.keys(data);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        updates[`${key}/read`] = true;
+        updates[`${key}/readAt`] = timestamp;
       }
       if (Object.keys(updates).length > 0) {
-        await db.ref('notifications').update(updates);
+        await db.ref(`user_notifications/${username}`).update(updates);
       }
     }
+    
     res.json({ success: true, message: 'All marked as read' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -115,24 +172,24 @@ router.put('/notifications/read-all', authenticateToken, async (req, res) => {
 // Get unread count
 router.get('/notifications/unread/count', authenticateToken, async (req, res) => {
   try {
-    var username = req.user.username;
-    var snapshot = await db.ref('notifications')
-      .orderByChild('userId')
-      .equalTo(username)
+    const username = req.user.username;
+    
+    const snapshot = await db.ref(`user_notifications/${username}`)
+      .orderByChild('read')
+      .equalTo(false)
       .once('value');
     
-    var unreadCount = 0;
-    var data = snapshot.val();
+    let unreadCount = 0;
+    const data = snapshot.val();
     if (data) {
-      var values = Object.values(data);
-      for (var i = 0; i < values.length; i++) {
-        if (!values[i].read) unreadCount++;
-      }
+      unreadCount = Object.keys(data).length;
     }
+    
     res.json({ success: true, unreadCount: unreadCount });
   } catch (error) {
+    console.error('Error counting unread:', error);
     res.json({ success: true, unreadCount: 0 });
   }
 });
 
-module.exports = router;
+module.exports = { router, createActivityLog, createNotification };
