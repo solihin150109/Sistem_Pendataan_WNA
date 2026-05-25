@@ -4,7 +4,7 @@ import {
   Briefcase, ShieldCheck, BarChart3, PieChart, Activity,
   Loader2, CheckCircle2, AlertCircle, Printer
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 import {

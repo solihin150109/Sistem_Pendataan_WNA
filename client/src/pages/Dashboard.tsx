@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-//import { motion } from 'motion/react';
+//import { motion } from 'framer-motion';
 import { motion } from 'framer-motion';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';

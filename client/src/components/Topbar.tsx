@@ -7,7 +7,7 @@ import { useAuth } from '../AuthContext';
 import { api } from '../api';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-//import { motion, AnimatePresence } from 'motion/react';
+//import { motion, AnimatePresence } from 'framer-motion';
 
 interface TopbarProps {
   onToggleSidebar: () => void;

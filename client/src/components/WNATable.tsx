@@ -3,7 +3,7 @@ import { WNA, IzinTinggalType } from '../types';
 import React, { useState, useEffect, useRef } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, useMap, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
 

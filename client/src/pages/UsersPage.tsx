@@ -4,7 +4,7 @@ import {
   X, Save, Loader2, CheckCircle2, AlertCircle, Key, Mail,
   Phone, MapPin, Briefcase, Calendar, Lock, UserCheck
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 

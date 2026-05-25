@@ -4,6 +4,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --primary-blue: #001f3f;
+    --accent-gold: #d4af37;
+  }
+  
+  body {
+    @apply bg-slate-50;
+  }
+}
+
 @theme {
   --color-primary-blue: #001f3f; /* Deep Navy Blue */
   --color-accent-gold: #d4af37; /* Classic Gold */
