@@ -1,4 +1,5 @@
-import { motion } from 'motion/react';
+//import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { 
     User, Mail, Shield, ShieldCheck, MapPin, Calendar, Edit2, Camera, 
     X, Save, Lock, Phone, Home, Building, Upload, AlertCircle, CheckCircle2,
