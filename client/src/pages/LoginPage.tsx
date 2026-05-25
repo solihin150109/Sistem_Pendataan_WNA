@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Lock, User as UserIcon, AlertCircle } from 'lucide-react';
-import { motion } from 'motion/react';
+//import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 // Logo Dirjen Imigrasi untuk Login Page
 const LogoImigrasiFull = ({ className }: { className?: string }) => (
