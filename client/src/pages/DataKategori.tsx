@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { IzinTinggalType } from '../types';
 import { Database, FileText, Plus, MapPin, Download, X, Loader2, CheckCircle2, AlertTriangle, Navigation, Shield } from 'lucide-react';
-import { motion } from 'motion/react';
+//import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
 
