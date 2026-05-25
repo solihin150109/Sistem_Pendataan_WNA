@@ -2,33 +2,25 @@
 
 // Deteksi environment untuk menentukan API URL
 const getApiBaseUrl = () => {
-  // Deteksi apakah sedang di Vercel (production)
+  // Deteksi apakah sedang di Vercel
   const isVercel = window.location.hostname.includes('vercel.app');
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   
   console.log('🌐 Environment detection:', {
     hostname: window.location.hostname,
-    protocol: window.location.protocol,
     isVercel,
     isLocalhost
   });
   
   if (isVercel) {
-    // Di Vercel, gunakan relative path (otomatis menggunakan HTTPS)
-    // Pastikan backend sudah di-deploy di Vercel juga atau menggunakan API routes
-    return '/api';
+    return '/api';  // ✅ HARUSNYA INI: relative path
   }
   
   if (isLocalhost) {
-    // Local development dengan backend Express di port 5000
     return 'http://localhost:5000/api';
   }
   
-  // Fallback untuk environment lain (misal preview deployment)
-  // Gunakan hostname yang sama dengan frontend
-  const protocol = window.location.protocol;
-  const hostname = window.location.hostname;
-  return `${protocol}//${hostname}:5000/api`;
+  return '/api';
 };
 
 const API_BASE = getApiBaseUrl();
