@@ -2,25 +2,32 @@
   "version": 2,
   "builds": [
     {
-      "src": "server/server.js",
+      "src": "api/**/*.js",
       "use": "@vercel/node"
     },
     {
-      "src": "client/package.json",
+      "src": "client/**/*",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "dist"
+        "distDir": "client/dist"
       }
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "destination": "server/server.js"
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
     },
     {
-      "source": "/(.*)",
-      "destination": "/client/$1"
+      "src": "/(.*)",
+      "dest": "/client/dist/$1"
     }
-  ]
+  ],
+  "env": {
+    "JWT_SECRET": "@jwt_secret",
+    "FIREBASE_PROJECT_ID": "@firebase_project_id",
+    "FIREBASE_CLIENT_EMAIL": "@firebase_client_email",
+    "FIREBASE_PRIVATE_KEY": "@firebase_private_key",
+    "FIREBASE_DATABASE_URL": "@firebase_database_url"
+  }
 }

@@ -1,16 +1,34 @@
-// api.ts - UPDATE dengan dynamic API URL
+// api.ts - UPDATE dengan dynamic API URL untuk Vercel
 
 // Deteksi environment untuk menentukan API URL
 const getApiBaseUrl = () => {
-  // Untuk production / dev tunnel
-  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    // Gunakan hostname yang sama dengan frontend, ganti port ke 5000
-    const hostname = window.location.hostname;
-    return `http://${hostname}:5000/api`;
+  // Deteksi apakah sedang di Vercel (production)
+  const isVercel = window.location.hostname.includes('vercel.app');
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  
+  console.log('🌐 Environment detection:', {
+    hostname: window.location.hostname,
+    protocol: window.location.protocol,
+    isVercel,
+    isLocalhost
+  });
+  
+  if (isVercel) {
+    // Di Vercel, gunakan relative path (otomatis menggunakan HTTPS)
+    // Pastikan backend sudah di-deploy di Vercel juga atau menggunakan API routes
+    return '/api';
   }
   
-  // Untuk local development
-  return 'http://localhost:5000/api';
+  if (isLocalhost) {
+    // Local development dengan backend Express di port 5000
+    return 'http://localhost:5000/api';
+  }
+  
+  // Fallback untuk environment lain (misal preview deployment)
+  // Gunakan hostname yang sama dengan frontend
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  return `${protocol}//${hostname}:5000/api`;
 };
 
 const API_BASE = getApiBaseUrl();
@@ -18,6 +36,7 @@ const API_BASE = getApiBaseUrl();
 console.log('🔧 API Base URL:', API_BASE);
 console.log('📍 Current origin:', window.location.origin);
 console.log('📍 Current hostname:', window.location.hostname);
+console.log('📍 Current protocol:', window.location.protocol);
 
 class APIService {
   private token: string | null = null;
@@ -41,6 +60,15 @@ class APIService {
     console.log('🗑️ Token cleared');
   }
 
+  private buildUrl(endpoint: string): string {
+    // Jika API_BASE sudah merupakan relative path (dimulai dengan '/')
+    if (API_BASE.startsWith('/')) {
+      return `${window.location.origin}${API_BASE}${endpoint}`;
+    }
+    // Jika absolute URL
+    return `${API_BASE}${endpoint}`;
+  }
+
   private async request(endpoint: string, options: RequestInit = {}) {
     const token = this.getToken();
     const headers = new Headers(options.headers);
@@ -49,7 +77,7 @@ class APIService {
       headers.set('Authorization', `Bearer ${token}`);
     }
 
-    const url = `${API_BASE}${endpoint}`;
+    const url = this.buildUrl(endpoint);
     console.log(`📡 Request: ${options.method || 'GET'} ${url}`);
     
     try {
@@ -93,7 +121,7 @@ class APIService {
   // ==================== AUTH ====================
   async login(username: string, password: string) {
     console.log(`🔐 Login attempt: ${username}`);
-    console.log(`📡 Posting to: ${API_BASE}/auth/login`);
+    console.log(`📡 Posting to: ${this.buildUrl('/auth/login')}`);
     
     const data = await this.request('/auth/login', {
       method: 'POST',
@@ -178,7 +206,7 @@ class APIService {
 
   async exportAllWNA(): Promise<Blob> {
     const token = this.getToken();
-    const url = `${API_BASE}/wna/export/all`;
+    const url = this.buildUrl('/wna/export/all');
     console.log(`📥 Exporting to: ${url}`);
     
     const response = await fetch(url, {
@@ -271,7 +299,7 @@ class APIService {
   // ==================== REPORTS ====================
   async exportReport(): Promise<Blob> {
     const token = this.getToken();
-    const url = `${API_BASE}/reports/export/pdf`;
+    const url = this.buildUrl('/reports/export/pdf');
     console.log(`📥 Exporting PDF report to: ${url}`);
     
     const response = await fetch(url, {
@@ -292,7 +320,7 @@ class APIService {
 
   async exportExcel(): Promise<Blob> {
     const token = this.getToken();
-    const url = `${API_BASE}/reports/export/excel`;
+    const url = this.buildUrl('/reports/export/excel');
     console.log(`📥 Exporting Excel report to: ${url}`);
     
     const response = await fetch(url, {
