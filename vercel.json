@@ -22,9 +22,5 @@
       "src": "/(.*)",
       "dest": "/client/dist/$1"
     }
-  ],
-  "buildCommand": "cd client && npm install && npm run build",
-  "installCommand": "npm install",
-  "framework": "vite",
-  "nodeVersion": "20.x"
+  ]
 }
