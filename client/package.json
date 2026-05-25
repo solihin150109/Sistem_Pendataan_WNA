@@ -1,10 +1,7 @@
 {
-  "name": "pantau-asing-client",
+  "name": "sipagi-client",
   "private": true,
   "version": "1.0.0",
-  "engines": {
-    "node": "24.x"
-  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,10 +13,11 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
     "lucide-react": "^0.292.0",
-    "motion": "^10.16.4",
+    "framer-motion": "^10.16.4",
     "clsx": "^2.0.0",
     "tailwind-merge": "^2.1.0",
-    "recharts": "^2.10.0"
+    "recharts": "^2.10.0",
+    "@react-google-maps/api": "^2.19.2"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
