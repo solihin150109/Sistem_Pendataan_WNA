@@ -6,7 +6,7 @@
     "node": "20.x"
   },
   "scripts": {
-    "build": "cd client && npm install && npm run build",
+    "build": "cd client && npm install && npm start",
     "dev": "cd client && npm run dev"
   },
   "dependencies": {
