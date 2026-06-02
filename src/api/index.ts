@@ -268,17 +268,56 @@ async function handleDownloadTemplate(): Promise<Response> {
   });
 }
 
+// src/api/index.ts - Update handleImportWNA
+
 async function handleImportWNA(request: Request, env: Env): Promise<Response> {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const text = await file.text();
-    const lines = text.split(/\r?\n/);
+    
+    // Normalize line endings and remove BOM
+    let cleanText = text.replace(/^\uFEFF/, '');
+    const lines = cleanText.split(/\r?\n/);
+    
+    if (lines.length < 2) {
+      return Response.json({ success: false, message: 'File kosong' }, { status: 400, headers: corsHeaders });
+    }
+    
+    // Parse headers (case insensitive)
+    const headerLine = lines[0];
+    const rawHeaders = headerLine.split(',').map(h => h.replace(/["']/g, '').trim().toLowerCase());
+    
+    // Map headers to standard field names
+    const headerMap: Record<string, string> = {
+      'namalengkap': 'namaLengkap',
+      'nama_lengkap': 'namaLengkap',
+      'nama': 'namaLengkap',
+      'nopaspor': 'noPaspor',
+      'no_paspor': 'noPaspor',
+      'paspor': 'noPaspor',
+      'negara': 'negara',
+      'type': 'type',
+      'tipe': 'type',
+      'sponsor': 'sponsor',
+      'alamat': 'alamat',
+      'domisili': 'domisili',
+      'latitude': 'latitude',
+      'lat': 'latitude',
+      'longitude': 'longitude',
+      'lng': 'longitude',
+      'long': 'longitude',
+      'status': 'status'
+    };
+    
+    const headers = rawHeaders.map(h => headerMap[h] || h);
+    console.log('📋 Headers:', headers);
     
     let importedCount = 0;
     const errors: string[] = [];
     const duplicates: string[] = [];
     
+    // Get existing passports
     const existingData = await fetchFromFirebase(env, 'wna');
     const existingPassports = new Set();
     if (existingData) {
@@ -287,47 +326,150 @@ async function handleImportWNA(request: Request, env: Env): Promise<Response> {
       });
     }
     
+    // Process each row
     for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
+      const line = lines[i].trim();
+      if (!line) continue;
       
-      const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
-      if (values.length < 5) {
-        errors.push(`Baris ${i + 1}: Data tidak lengkap`);
+      // Parse CSV line (handle quoted values)
+      const values: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let j = 0; j < line.length; j++) {
+        const char = line[j];
+        if (char === '"') {
+          if (inQuotes && line[j + 1] === '"') {
+            current += '"';
+            j++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+      
+      // Clean values
+      const cleanValues = values.map(v => v.replace(/^["']|["']$/g, '').trim());
+      
+      // Build row object
+      const row: Record<string, string> = {};
+      for (let idx = 0; idx < headers.length && idx < cleanValues.length; idx++) {
+        row[headers[idx]] = cleanValues[idx];
+      }
+      
+      const rowNum = i + 1;
+      
+      // Extract required fields
+      const namaLengkap = row.namaLengkap || '';
+      const noPaspor = row.noPaspor || '';
+      const negara = row.negara || '';
+      let type = (row.type || 'VOA').toUpperCase();
+      const sponsor = row.sponsor || '-';
+      const alamat = row.alamat || '';
+      const domisili = row.domisili || 'Kota Jambi';
+      
+      // Parse coordinates
+      let latitude: number | null = null;
+      let longitude: number | null = null;
+      
+      const latStr = row.latitude?.toString() || '';
+      const lngStr = row.longitude?.toString() || '';
+      
+      if (latStr && latStr !== '-') {
+        const parsed = parseFloat(latStr);
+        if (!isNaN(parsed) && parsed >= -90 && parsed <= 90) {
+          latitude = parsed;
+        } else {
+          errors.push(`Baris ${rowNum}: Latitude tidak valid (${latStr})`);
+        }
+      }
+      
+      if (lngStr && lngStr !== '-') {
+        const parsed = parseFloat(lngStr);
+        if (!isNaN(parsed) && parsed >= -180 && parsed <= 180) {
+          longitude = parsed;
+        } else {
+          errors.push(`Baris ${rowNum}: Longitude tidak valid (${lngStr})`);
+        }
+      }
+      
+      // Validate type
+      if (!['VOA', 'ITK', 'ITAS', 'ITAP'].includes(type)) {
+        type = 'VOA';
+      }
+      
+      // Validate status
+      let status = (row.status || 'ACTIVE').toUpperCase();
+      if (!['ACTIVE', 'EXPIRED', 'DEPARTED'].includes(status)) {
+        status = 'ACTIVE';
+      }
+      
+      // Validate required fields
+      if (!namaLengkap) {
+        errors.push(`Baris ${rowNum}: Nama lengkap wajib diisi`);
+        continue;
+      }
+      if (!noPaspor) {
+        errors.push(`Baris ${rowNum}: Nomor paspor wajib diisi`);
+        continue;
+      }
+      if (!negara) {
+        errors.push(`Baris ${rowNum}: Negara asal wajib diisi`);
+        continue;
+      }
+      if (!alamat) {
+        errors.push(`Baris ${rowNum}: Alamat wajib diisi`);
         continue;
       }
       
-      const paspor = values[1];
-      if (existingPassports.has(paspor)) {
-        duplicates.push(paspor);
+      // Check duplicate
+      if (existingPassports.has(noPaspor)) {
+        duplicates.push(noPaspor);
         continue;
       }
       
+      const now = new Date().toISOString();
       const data = {
-        namaLengkap: values[0],
-        noPaspor: paspor,
-        negara: values[2],
-        type: values[3]?.toUpperCase() || 'VOA',
-        sponsor: values[4] || '-',
-        alamat: values[5] || '',
-        domisili: values[6] || 'Kota Jambi',
-        latitude: parseFloat(values[7]) || null,
-        longitude: parseFloat(values[8]) || null,
-        status: values[9]?.toUpperCase() || 'ACTIVE',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        namaLengkap,
+        noPaspor,
+        negara,
+        type,
+        sponsor,
+        alamat,
+        domisili,
+        latitude,
+        longitude,
+        status,
+        createdAt: now,
+        updatedAt: now,
+        imported: true
       };
       
       await fetchFromFirebase(env, 'wna', 'POST', data);
       importedCount++;
-      existingPassports.add(paspor);
+      existingPassports.add(noPaspor);
+      console.log(`✅ Imported: ${namaLengkap} (${noPaspor})`);
     }
     
     return Response.json({
       success: true,
       message: `Import selesai. ${importedCount} data berhasil diimport.`,
-      data: { importedCount, duplicateCount: duplicates.length, errorCount: errors.length, errors: errors.slice(0, 10) }
+      data: {
+        importedCount,
+        duplicateCount: duplicates.length,
+        errorCount: errors.length,
+        errors: errors.slice(0, 20),
+        duplicates: duplicates.slice(0, 20)
+      }
     }, { headers: corsHeaders });
   } catch (error: any) {
+    console.error('Import error:', error);
     return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
   }
 }
