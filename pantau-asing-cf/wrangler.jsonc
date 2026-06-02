@@ -8,12 +8,5 @@
     "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application"
-  },
-  "vars": {
-    "FIREBASE_API_KEY": "AIzaSyDummyKey",
-    "FIREBASE_AUTH_DOMAIN": "pendataanwna.firebaseapp.com",
-    "FIREBASE_PROJECT_ID": "pendataanwna",
-    "FIREBASE_DATABASE_URL": "https://pendataanwna-default-rtdb.asia-southeast1.firebasedatabase.app",
-    "JWT_SECRET": "pantau-asing-secret-key-2024"
   }
 }
