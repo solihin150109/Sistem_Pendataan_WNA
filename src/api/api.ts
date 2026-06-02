@@ -1,410 +1,431 @@
-// src/api/index.ts - Full Express-style API untuk Cloudflare Worker
+// api.ts - Fixed version with proper error handling
 
-export interface Env {
-  FIREBASE_PROJECT_ID: string;
-  FIREBASE_CLIENT_EMAIL: string;
-  FIREBASE_PRIVATE_KEY: string;
-  FIREBASE_DATABASE_URL: string;
-  JWT_SECRET: string;
-}
-
-// ==================== HELPER FUNCTIONS ====================
-
-async function fetchFromFirebase(env: Env, path: string, method: string = 'GET', body?: any): Promise<any> {
-  const url = `${env.FIREBASE_DATABASE_URL}/${path}.json`;
-  const options: RequestInit = { method };
-  if (body) {
-    options.body = JSON.stringify(body);
-    options.headers = { 'Content-Type': 'application/json' };
-  }
-  const response = await fetch(url, options);
-  return response.json();
-}
-
-// Hash password sederhana
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return btoa(String.fromCharCode(...new Uint8Array(hash)));
-}
-
-async function comparePassword(password: string, hash: string): Promise<boolean> {
-  const hashedInput = await hashPassword(password);
-  return hashedInput === hash;
-}
-
-// Generate JWT
-async function generateToken(user: any, env: Env): Promise<string> {
-  const payload = {
-    username: user.username,
-    name: user.name,
-    role: user.role,
-    exp: Math.floor(Date.now() / 1000) + 86400
-  };
-  const encoder = new TextEncoder();
-  const data = encoder.encode(JSON.stringify(payload) + env.JWT_SECRET);
-  const signature = await crypto.subtle.digest('SHA-256', data);
-  return btoa(JSON.stringify(payload)) + '.' + btoa(String.fromCharCode(...new Uint8Array(signature)));
-}
-
-// Verify JWT
-async function verifyToken(token: string, env: Env): Promise<any> {
-  try {
-    const [payload, signature] = token.split('.');
-    const decodedPayload = JSON.parse(atob(payload));
-    if (decodedPayload.exp < Math.floor(Date.now() / 1000)) {
-      throw new Error('Token expired');
-    }
-    return decodedPayload;
-  } catch (e) {
-    throw new Error('Invalid token');
-  }
-}
-
-// Get user from Authorization header
-async function getUserFromRequest(request: Request, env: Env): Promise<any> {
-  const authHeader = request.headers.get('Authorization');
-  const token = authHeader?.split(' ')[1];
-  if (!token) throw new Error('No token');
-  return await verifyToken(token, env);
-}
-
-// CORS Headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json'
-};
-
-// ==================== AUTH ROUTES ====================
-
-async function handleLogin(request: Request, env: Env): Promise<Response> {
-  try {
-    const { username, password } = await request.json();
-    
-    // MOCK USER UNTUK TESTING
-    if (username === 'admin' && password === 'admin123') {
-      const token = await generateToken({ username: 'admin', name: 'Administrator', role: 'Administrator' }, env);
-      return Response.json({
-        success: true,
-        token,
-        user: { name: 'Administrator', role: 'Administrator', username: 'admin', email: '' }
-      }, { headers: corsHeaders });
-    }
-    
-    if (!userData) {
-      return Response.json({ success: false, message: 'Username atau password salah' }, { status: 401, headers: corsHeaders });
-    }
-    
-    const isValid = await comparePassword(password, userData.password);
-    if (!isValid) {
-      return Response.json({ success: false, message: 'Username atau password salah' }, { status: 401, headers: corsHeaders });
-    }
-    
-    const token = await generateToken({ username, name: userData.name, role: userData.role }, env);
-    
-    return Response.json({
-      success: true,
-      token,
-      user: { name: userData.name, role: userData.role, username, email: userData.email || '' }
-    }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
-  }
-}
-
-async function handleVerify(request: Request, env: Env): Promise<Response> {
-  try {
-    const user = await getUserFromRequest(request, env);
-    return Response.json({ success: true, user }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 401, headers: corsHeaders });
-  }
-}
-
-// ==================== PROFILE ROUTES ====================
-
-async function handleGetProfile(request: Request, env: Env): Promise<Response> {
-  try {
-    const user = await getUserFromRequest(request, env);
-    const userData = await fetchFromFirebase(env, `users/${user.username}`);
-    const { password, ...profile } = userData;
-    
-    return Response.json({ success: true, data: { username: user.username, ...profile } }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
-  }
-}
-
-async function handleUpdateProfile(request: Request, env: Env): Promise<Response> {
-  try {
-    const user = await getUserFromRequest(request, env);
-    const body = await request.json();
-    
-    await fetchFromFirebase(env, `users/${user.username}`, 'PATCH', { ...body, updatedAt: new Date().toISOString() });
-    return Response.json({ success: true, message: 'Profil berhasil diperbarui' }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
-  }
-}
-
-// ==================== WNA ROUTES ====================
-
-async function handleGetWNA(request: Request, env: Env): Promise<Response> {
-  try {
-    const url = new URL(request.url);
-    const type = url.searchParams.get('type');
-    
-    const data = await fetchFromFirebase(env, 'wna');
-    let list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-    if (type) list = list.filter(item => item.type === type);
-    
-    return Response.json({ success: true, data: list, total: list.length }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
-  }
-}
-
-async function handleDashboardStats(env: Env): Promise<Response> {
-  try {
-    const data = await fetchFromFirebase(env, 'wna');
-    let total = 0, voa = 0, itk = 0, itas = 0, itap = 0;
-    const negaraMap: Record<string, number> = {};
-    
-    if (data) {
-      Object.values(data).forEach((item: any) => {
-        total++;
-        switch(item.type) {
-          case 'VOA': voa++; break;
-          case 'ITK': itk++; break;
-          case 'ITAS': itas++; break;
-          case 'ITAP': itap++; break;
-        }
-        if (item.negara) negaraMap[item.negara] = (negaraMap[item.negara] || 0) + 1;
-      });
-    }
-    
-    const byCountry = Object.entries(negaraMap)
-      .map(([name, jumlah]) => ({ name, jumlah }))
-      .sort((a, b) => b.jumlah - a.jumlah)
-      .slice(0, 10);
-    
-    return Response.json({ success: true, data: { total, byType: { VOA: voa, ITK: itk, ITAS: itas, ITAP: itap }, byCountry } }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
-  }
-}
-
-async function handleCreateWNA(request: Request, env: Env): Promise<Response> {
-  try {
-    const body = await request.json();
-    const newData = {
-      ...body,
-      status: body.status || 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    const result = await fetchFromFirebase(env, 'wna', 'POST', newData);
-    return Response.json({ success: true, message: 'Data berhasil ditambahkan', id: result.name }, { status: 201, headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
-  }
-}
-
-async function handleDeleteWNA(request: Request, env: Env): Promise<Response> {
-  try {
-    const url = new URL(request.url);
-    const id = url.pathname.split('/').pop();
-    await fetchFromFirebase(env, `wna/${id}`, 'DELETE');
-    return Response.json({ success: true, message: 'Data berhasil dihapus' }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
-  }
-}
-
-// ==================== IMPORT ROUTES ====================
-
-async function handleDownloadTemplate(): Promise<Response> {
-  const headers = ['namaLengkap', 'noPaspor', 'negara', 'type', 'sponsor', 'alamat', 'domisili', 'latitude', 'longitude', 'status'];
-  const csvContent = headers.join(',') + '\n' +
-    '"John Doe","ABC123456","United States","VOA","PT Contoh","Jl. Contoh No. 123","Kota Jambi","-1.65","103.2","ACTIVE"\n' +
-    '"Jane Smith","XYZ789012","United Kingdom","ITAS","CV Lain","Jl. Test No. 456","Kota Jambi","-1.65","103.2","ACTIVE"';
+// Deteksi environment untuk menentukan API URL
+const getApiBaseUrl = () => {
+  const isVercel = window.location.hostname.includes('vercel.app');
+  const isCloudflare = window.location.hostname.includes('workers.dev');
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   
-  return new Response("\uFEFF" + csvContent, {
-    headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename=template_import_wna.csv' }
+  console.log('🌐 Environment detection:', {
+    hostname: window.location.hostname,
+    isVercel,
+    isCloudflare,
+    isLocalhost
   });
-}
-
-async function handleImportWNA(request: Request, env: Env): Promise<Response> {
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const text = await file.text();
-    const lines = text.split(/\r?\n/);
-    
-    let importedCount = 0;
-    
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
-      if (values.length < 5) continue;
-      
-      const data = {
-        namaLengkap: values[0],
-        noPaspor: values[1],
-        negara: values[2],
-        type: values[3].toUpperCase(),
-        sponsor: values[4] || '-',
-        alamat: values[5] || '',
-        domisili: values[6] || 'Kota Jambi',
-        latitude: parseFloat(values[7]) || null,
-        longitude: parseFloat(values[8]) || null,
-        status: values[9]?.toUpperCase() || 'ACTIVE',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      
-      await fetchFromFirebase(env, 'wna', 'POST', data);
-      importedCount++;
-    }
-    
-    return Response.json({ success: true, message: `Import selesai. ${importedCount} data berhasil diimport.`, data: { importedCount } }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  
+  if (isCloudflare || isVercel) {
+    return '';  // API di path yang sama
   }
-}
-
-// ==================== USERS ROUTES ====================
-
-async function handleGetUsers(env: Env): Promise<Response> {
-  try {
-    const users = await fetchFromFirebase(env, 'users');
-    const userList = users ? Object.keys(users).map(key => {
-      const { password, ...rest } = users[key];
-      return { id: key, username: key, ...rest };
-    }) : [];
-    return Response.json({ success: true, data: userList }, { headers: corsHeaders });
-  } catch (error: any) {
-    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  
+  if (isLocalhost) {
+    return 'http://localhost:5000';
   }
-}
-
-// ==================== MAIN WORKER ====================
-
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const method = request.method;
-    
-    // Handle preflight
-    if (method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
-    }
-    
-    // Health check
-    if (path === '/api/health' && method === 'GET') {
-      return Response.json({ success: true, message: 'Server running', timestamp: new Date().toISOString() }, { headers: corsHeaders });
-    }
-    
-    // Auth routes
-    if (path === '/api/auth/login' && method === 'POST') {
-      return handleLogin(request, env);
-    }
-    if (path === '/api/auth/verify' && method === 'GET') {
-      return handleVerify(request, env);
-    }
-    
-    // Profile routes
-    if (path === '/api/profile/me' && method === 'GET') {
-      return handleGetProfile(request, env);
-    }
-    if (path === '/api/profile/me' && method === 'PUT') {
-      return handleUpdateProfile(request, env);
-    }
-    
-    // WNA routes
-    if (path === '/api/wna' && method === 'GET') {
-      return handleGetWNA(request, env);
-    }
-    if (path === '/api/wna/stats/dashboard' && method === 'GET') {
-      return handleDashboardStats(env);
-    }
-    if (path === '/api/wna' && method === 'POST') {
-      return handleCreateWNA(request, env);
-    }
-    if (path.match(/^\/api\/wna\/[^/]+$/) && method === 'DELETE') {
-      return handleDeleteWNA(request, env);
-    }
-    
-    // Export all
-    if (path === '/api/wna/export/all' && method === 'GET') {
-      const data = await fetchFromFirebase(env, 'wna');
-      const list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-      const headers = ['ID', 'Nama Lengkap', 'No Paspor', 'Negara', 'Tipe Izin', 'Sponsor', 'Alamat', 'Domisili', 'Status'];
-      const rows = [headers];
-      for (const item of list) {
-        rows.push([item.id, item.namaLengkap || '', item.noPaspor || '', item.negara || '', item.type || '', item.sponsor || '', item.alamat || '', item.domisili || '', item.status || 'ACTIVE']);
-      }
-      const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-      return new Response("\uFEFF" + csv, {
-        headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename=wna_export.csv` }
-      });
-    }
-    
-    // Import routes
-    if (path === '/api/wna/import/template' && method === 'GET') {
-      return handleDownloadTemplate();
-    }
-    if (path === '/api/wna/import' && method === 'POST') {
-      return handleImportWNA(request, env);
-    }
-    
-    // Users routes
-    if (path === '/api/users' && method === 'GET') {
-      return handleGetUsers(env);
-    }
-    
-    // Activity logs
-    if (path === '/api/activity/logs' && method === 'GET') {
-      const logs = await fetchFromFirebase(env, 'activity_logs');
-      const logList = logs ? Object.keys(logs).map(key => ({ id: key, ...logs[key] })).reverse() : [];
-      return Response.json({ success: true, data: logList, total: logList.length }, { headers: corsHeaders });
-    }
-    
-    // Notifications
-    if (path === '/api/activity/notifications' && method === 'GET') {
-      return Response.json({ success: true, data: [], total: 0 }, { headers: corsHeaders });
-    }
-    if (path === '/api/activity/notifications/unread/count' && method === 'GET') {
-      return Response.json({ success: true, unreadCount: 0 }, { headers: corsHeaders });
-    }
-    
-    // Reports
-    if (path === '/api/reports/export/excel' && method === 'GET') {
-      const data = await fetchFromFirebase(env, 'wna');
-      const list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-      const headers = ['ID', 'Nama Lengkap', 'No Paspor', 'Negara', 'Tipe Izin', 'Sponsor', 'Alamat', 'Domisili', 'Status'];
-      const rows = [headers];
-      for (const item of list) {
-        rows.push([item.id, item.namaLengkap || '', item.noPaspor || '', item.negara || '', item.type || '', item.sponsor || '', item.alamat || '', item.domisili || '', item.status || 'ACTIVE']);
-      }
-      const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-      return new Response("\uFEFF" + csv, {
-        headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename=laporan_wna.csv` }
-      });
-    }
-    
-    // Regions
-    if (path === '/api/regions' && method === 'GET') {
-      const regions = await fetchFromFirebase(env, 'regions');
-      const regionList = regions ? Object.keys(regions).map(key => ({ id: key, ...regions[key] })) : [];
-      return Response.json({ success: true, data: regionList }, { headers: corsHeaders });
-    }
-    
-    // Static assets (React SPA)
-    return env.ASSETS.fetch(request);
-  }
+  
+  return '';
 };
+
+const API_BASE_URL = getApiBaseUrl();
+
+console.log('🔧 API Base URL:', API_BASE_URL || '(same origin)');
+console.log('📍 Current origin:', window.location.origin);
+
+class APIService {
+  private token: string | null = null;
+
+  setToken(token: string) {
+    this.token = token;
+    localStorage.setItem('auth_token', token);
+    console.log('✅ Token saved');
+  }
+
+  getToken(): string | null {
+    if (!this.token) {
+      this.token = localStorage.getItem('auth_token');
+    }
+    return this.token;
+  }
+
+  clearToken() {
+    this.token = null;
+    localStorage.removeItem('auth_token');
+    console.log('🗑️ Token cleared');
+  }
+
+  private getApiUrl(endpoint: string): string {
+    if (API_BASE_URL) {
+      return `${API_BASE_URL}/api${endpoint}`;
+    }
+    return `/api${endpoint}`;
+  }
+
+  private async request(endpoint: string, options: RequestInit = {}) {
+    const token = this.getToken();
+    const headers = new Headers(options.headers);
+    
+    // Jangan set Content-Type untuk FormData
+    if (!(options.body instanceof FormData)) {
+      headers.set('Content-Type', 'application/json');
+    }
+    
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    const url = this.getApiUrl(endpoint);
+    
+    console.log(`📡 ${options.method || 'GET'} ${url}`);
+    
+    try {
+      const response = await fetch(url, { 
+        ...options, 
+        headers,
+        credentials: 'include'
+      });
+      
+      console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+      
+      // Handle blob responses (exports)
+      if (endpoint.includes('/export')) {
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || 'Export failed');
+        }
+        return response.blob();
+      }
+      
+      // Coba parse JSON
+      let data;
+      const textResponse = await response.text();
+      console.log(`📡 Raw response: ${textResponse.substring(0, 500)}`);
+      
+      try {
+        data = JSON.parse(textResponse);
+      } catch (e) {
+        console.error('❌ Failed to parse JSON:', e);
+        throw new Error(`Invalid JSON response: ${textResponse.substring(0, 200)}`);
+      }
+      
+      console.log(`📡 Response data:`, data);
+      
+      if (!response.ok) {
+        // JANGAN AUTO REDIRECT - biar error terlihat
+        if (response.status === 401) {
+          console.warn('⚠️ Unauthorized! Token mungkin expired.');
+          this.clearToken();
+          // COMMENT dulu untuk debugging
+          // window.location.href = '/login';
+        }
+        const errorMessage = data.message || data.errors?.[0]?.msg || 'Request failed';
+        throw new Error(errorMessage);
+      }
+      return data;
+    } catch (error) {
+      console.error('❌ API Error:', error);
+      throw error;
+    }
+  }
+
+  // ==================== AUTH ====================
+  async login(username: string, password: string) {
+    console.log(`🔐 Login attempt: ${username}`);
+    console.log(`📡 Posting to: ${this.getApiUrl('/auth/login')}`);
+    
+    try {
+      const result = await this.request('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password })
+      });
+      
+      console.log('🔐 Login response:', result);
+      
+      if (result.success && result.token) {
+        this.setToken(result.token);
+        console.log('🔐 Login successful, token saved');
+      } else {
+        console.log('🔐 Login failed:', result.message);
+      }
+      return result;
+    } catch (error: any) {
+      console.error('🔐 Login error caught:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  async verifyToken() {
+    console.log('🔐 Verifying token...');
+    try {
+      const result = await this.request('/auth/verify');
+      console.log('🔐 Verify result:', result);
+      return result;
+    } catch (error: any) {
+      console.error('🔐 Verify error:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  async logout() {
+    this.clearToken();
+  }
+
+  // ==================== PROFILE ====================
+  async getProfile() {
+    console.log('👤 Fetching profile...');
+    return this.request('/profile/me');
+  }
+
+  async updateProfile(data: any) {
+    console.log('👤 Updating profile...');
+    return this.request('/profile/me', { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    console.log('🔐 Changing password...');
+    return this.request('/profile/me/password', { 
+      method: 'PUT', 
+      body: JSON.stringify({ currentPassword, newPassword }) 
+    });
+  }
+
+  async uploadPhoto(photoBase64: string) {
+    console.log('📸 Uploading photo...');
+    return this.request('/profile/me/photo', { 
+      method: 'POST', 
+      body: JSON.stringify({ photo: photoBase64 }) 
+    });
+  }
+
+  // ==================== WNA ====================
+  async getWNA(filters?: { type?: string; negara?: string; status?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.type) params.append('type', filters.type);
+    if (filters?.negara) params.append('negara', filters.negara);
+    if (filters?.status) params.append('status', filters.status);
+    
+    const queryString = params.toString();
+    const endpoint = `/wna${queryString ? `?${queryString}` : ''}`;
+    console.log(`📋 Fetching WNA: ${endpoint}`);
+    return this.request(endpoint);
+  }
+
+  async getDashboardStats() {
+    console.log('📊 Fetching dashboard stats...');
+    return this.request('/wna/stats/dashboard');
+  }
+
+  async createWNA(data: any) {
+    console.log('➕ Creating WNA:', data.namaLengkap);
+    return this.request('/wna', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateWNA(id: string, data: any) {
+    console.log(`✏️ Updating WNA: ${id}`);
+    return this.request(`/wna/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteWNA(id: string) {
+    console.log(`🗑️ Deleting WNA: ${id}`);
+    return this.request(`/wna/${id}`, { method: 'DELETE' });
+  }
+
+  async exportAllWNA(): Promise<Blob> {
+    const token = this.getToken();
+    const url = this.getApiUrl('/wna/export/all');
+    
+    console.log(`📥 Exporting to: ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Export failed' }));
+      throw new Error(error.message || 'Export failed');
+    }
+    
+    return response.blob();
+  }
+
+  // ==================== IMPORT DATA ====================
+  async importWNA(file: File): Promise<any> {
+    console.log('📥 Importing WNA data from file:', file.name);
+    
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const url = this.getApiUrl('/wna/import');
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData,
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'Gagal mengimport data');
+    }
+    
+    return data;
+  }
+
+  async downloadTemplate(): Promise<Blob> {
+    const token = this.getToken();
+    const url = this.getApiUrl('/wna/import/template');
+    
+    console.log('📥 Downloading template from:', url);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Download template gagal';
+      try {
+        const error = await response.json();
+        errorMessage = error.message || errorMessage;
+      } catch (e) {
+        errorMessage = await response.text().catch(() => errorMessage);
+      }
+      throw new Error(errorMessage);
+    }
+    
+    return response.blob();
+  }
+
+  // ==================== USERS MANAGEMENT ====================
+  async getUsers() {
+    console.log('👥 Fetching users...');
+    return this.request('/users');
+  }
+
+  async getUser(username: string) {
+    console.log(`👥 Fetching user: ${username}`);
+    return this.request(`/users/${username}`);
+  }
+
+  async createUser(userData: any) {
+    console.log('👥 Creating user:', userData.username);
+    return this.request('/users', { method: 'POST', body: JSON.stringify(userData) });
+  }
+
+  async updateUser(username: string, userData: any) {
+    console.log(`👥 Updating user: ${username}`);
+    return this.request(`/users/${username}`, { method: 'PUT', body: JSON.stringify(userData) });
+  }
+
+  async deleteUser(username: string) {
+    console.log(`👥 Deleting user: ${username}`);
+    return this.request(`/users/${username}`, { method: 'DELETE' });
+  }
+
+  async toggleUserStatus(username: string, isActive: boolean) {
+    console.log(`👥 Toggling user status: ${username} -> ${isActive}`);
+    return this.request(`/users/${username}/status`, { 
+      method: 'PUT', 
+      body: JSON.stringify({ isActive }) 
+    });
+  }
+
+  // ==================== ACTIVITY LOGS ====================
+  async getActivityLogs(limit: number = 100) {
+    console.log('📋 Fetching activity logs...');
+    return this.request(`/activity/logs?limit=${limit}`);
+  }
+
+  // ==================== NOTIFICATIONS ====================
+  async getNotifications() {
+    try {
+      console.log('🔔 Fetching notifications...');
+      const result = await this.request('/activity/notifications');
+      return result;
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      return { success: true, data: [], total: 0 };
+    }
+  }
+
+  async markNotificationRead(id: string) {
+    console.log(`🔔 Marking notification ${id} as read`);
+    return this.request(`/activity/notifications/${id}/read`, { method: 'PUT' });
+  }
+
+  async markAllNotificationsRead() {
+    console.log('🔔 Marking all notifications as read');
+    return this.request('/activity/notifications/read-all', { method: 'PUT' });
+  }
+
+  async getUnreadCount() {
+    try {
+      const result = await this.request('/activity/notifications/unread/count');
+      return result;
+    } catch (error) {
+      return { success: true, unreadCount: 0 };
+    }
+  }
+
+  // ==================== REPORTS ====================
+  async exportReport(): Promise<Blob> {
+    const token = this.getToken();
+    const url = this.getApiUrl('/reports/export/pdf');
+    
+    console.log(`📥 Exporting PDF report to: ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Export failed' }));
+      throw new Error(error.message || 'Export failed');
+    }
+    
+    return response.blob();
+  }
+
+  async exportExcel(): Promise<Blob> {
+    const token = this.getToken();
+    const url = this.getApiUrl('/reports/export/excel');
+    
+    console.log(`📥 Exporting Excel report to: ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Export failed' }));
+      throw new Error(error.message || 'Export failed');
+    }
+    
+    return response.blob();
+  }
+
+  // ==================== HEALTH ====================
+  async healthCheck() {
+    console.log('🏥 Health check...');
+    return this.request('/health');
+  }
+}
+
+export const api = new APIService();

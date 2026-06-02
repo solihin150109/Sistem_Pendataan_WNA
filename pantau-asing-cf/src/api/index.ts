@@ -1,10 +1,10 @@
-// src/api/index.ts - Full Express-style API untuk Cloudflare Worker
+// src/api/index.ts - Full API untuk Cloudflare Worker
 
 export interface Env {
+  FIREBASE_DATABASE_URL: string;
   FIREBASE_PROJECT_ID: string;
   FIREBASE_CLIENT_EMAIL: string;
   FIREBASE_PRIVATE_KEY: string;
-  FIREBASE_DATABASE_URL: string;
   JWT_SECRET: string;
 }
 
@@ -12,16 +12,20 @@ export interface Env {
 
 async function fetchFromFirebase(env: Env, path: string, method: string = 'GET', body?: any): Promise<any> {
   const url = `${env.FIREBASE_DATABASE_URL}/${path}.json`;
+  console.log(`📡 Firebase ${method}: ${url}`);
+  
   const options: RequestInit = { method };
   if (body) {
     options.body = JSON.stringify(body);
     options.headers = { 'Content-Type': 'application/json' };
   }
+  
   const response = await fetch(url, options);
-  return response.json();
+  const data = await response.json();
+  console.log(`📡 Firebase response:`, data);
+  return data;
 }
 
-// Hash password sederhana
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(password);
@@ -34,7 +38,6 @@ async function comparePassword(password: string, hash: string): Promise<boolean>
   return hashedInput === hash;
 }
 
-// Generate JWT
 async function generateToken(user: any, env: Env): Promise<string> {
   const payload = {
     username: user.username,
@@ -48,7 +51,6 @@ async function generateToken(user: any, env: Env): Promise<string> {
   return btoa(JSON.stringify(payload)) + '.' + btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 
-// Verify JWT
 async function verifyToken(token: string, env: Env): Promise<any> {
   try {
     const [payload, signature] = token.split('.');
@@ -62,11 +64,10 @@ async function verifyToken(token: string, env: Env): Promise<any> {
   }
 }
 
-// Get user from Authorization header
 async function getUserFromRequest(request: Request, env: Env): Promise<any> {
   const authHeader = request.headers.get('Authorization');
   const token = authHeader?.split(' ')[1];
-  if (!token) throw new Error('No token');
+  if (!token) throw new Error('No token provided');
   return await verifyToken(token, env);
 }
 
@@ -83,27 +84,39 @@ const corsHeaders = {
 async function handleLogin(request: Request, env: Env): Promise<Response> {
   try {
     const { username, password } = await request.json();
+    console.log(`🔐 Login attempt: ${username}`);
     
-    // MOCK USER UNTUK TESTING
-    if (username === 'admin' && password === 'admin123') {
-      const token = await generateToken({ username: 'admin', name: 'Administrator', role: 'Administrator' }, env);
-      return Response.json({
-        success: true,
-        token,
-        user: { name: 'Administrator', role: 'Administrator', username: 'admin', email: '' }
-      }, { headers: corsHeaders });
+    // Ambil user dari Firebase
+    const users = await fetchFromFirebase(env, 'users');
+    console.log(`📋 Users from Firebase:`, users);
+    
+    let userData = null;
+    let userId = null;
+    
+    for (const [id, data] of Object.entries(users || {})) {
+      if (id === username || (data as any).username === username) {
+        userData = data;
+        userId = id;
+        break;
+      }
     }
     
     if (!userData) {
+      console.log(`❌ User not found: ${username}`);
       return Response.json({ success: false, message: 'Username atau password salah' }, { status: 401, headers: corsHeaders });
     }
     
+    console.log(`✅ User found:`, { name: userData.name, role: userData.role });
+    
     const isValid = await comparePassword(password, userData.password);
     if (!isValid) {
+      console.log(`❌ Invalid password for: ${username}`);
       return Response.json({ success: false, message: 'Username atau password salah' }, { status: 401, headers: corsHeaders });
     }
     
     const token = await generateToken({ username, name: userData.name, role: userData.role }, env);
+    
+    console.log(`✅ Login successful: ${username}`);
     
     return Response.json({
       success: true,
@@ -111,6 +124,7 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
       user: { name: userData.name, role: userData.role, username, email: userData.email || '' }
     }, { headers: corsHeaders });
   } catch (error: any) {
+    console.error('❌ Login error:', error);
     return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
   }
 }
@@ -150,18 +164,72 @@ async function handleUpdateProfile(request: Request, env: Env): Promise<Response
   }
 }
 
+async function handleChangePassword(request: Request, env: Env): Promise<Response> {
+  try {
+    const user = await getUserFromRequest(request, env);
+    const { currentPassword, newPassword } = await request.json();
+    
+    const userData = await fetchFromFirebase(env, `users/${user.username}`);
+    const isValid = await comparePassword(currentPassword, userData.password);
+    
+    if (!isValid) {
+      return Response.json({ success: false, message: 'Password saat ini salah' }, { status: 401, headers: corsHeaders });
+    }
+    
+    const hashedPassword = await hashPassword(newPassword);
+    await fetchFromFirebase(env, `users/${user.username}`, 'PATCH', { password: hashedPassword });
+    
+    return Response.json({ success: true, message: 'Password berhasil diubah' }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+async function handleUploadPhoto(request: Request, env: Env): Promise<Response> {
+  try {
+    const user = await getUserFromRequest(request, env);
+    const { photo } = await request.json();
+    
+    await fetchFromFirebase(env, `users/${user.username}`, 'PATCH', { photo, photoUpdatedAt: new Date().toISOString() });
+    return Response.json({ success: true, message: 'Foto berhasil diupload', photo }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
 // ==================== WNA ROUTES ====================
 
 async function handleGetWNA(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url);
     const type = url.searchParams.get('type');
+    const negara = url.searchParams.get('negara');
+    const status = url.searchParams.get('status');
     
     const data = await fetchFromFirebase(env, 'wna');
     let list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+    
     if (type) list = list.filter(item => item.type === type);
+    if (negara) list = list.filter(item => item.negara === negara);
+    if (status) list = list.filter(item => item.status === status);
     
     return Response.json({ success: true, data: list, total: list.length }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+async function handleGetWNAById(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const id = url.pathname.split('/').pop();
+    const data = await fetchFromFirebase(env, `wna/${id}`);
+    
+    if (!data) {
+      return Response.json({ success: false, message: 'Data tidak ditemukan' }, { status: 404, headers: corsHeaders });
+    }
+    
+    return Response.json({ success: true, data: { id, ...data } }, { headers: corsHeaders });
   } catch (error: any) {
     return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
   }
@@ -191,7 +259,10 @@ async function handleDashboardStats(env: Env): Promise<Response> {
       .sort((a, b) => b.jumlah - a.jumlah)
       .slice(0, 10);
     
-    return Response.json({ success: true, data: { total, byType: { VOA: voa, ITK: itk, ITAS: itas, ITAP: itap }, byCountry } }, { headers: corsHeaders });
+    return Response.json({ 
+      success: true, 
+      data: { total, byType: { VOA: voa, ITK: itk, ITAS: itas, ITAP: itap }, byCountry } 
+    }, { headers: corsHeaders });
   } catch (error: any) {
     return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
   }
@@ -213,12 +284,55 @@ async function handleCreateWNA(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function handleUpdateWNA(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const id = url.pathname.split('/').pop();
+    const body = await request.json();
+    
+    await fetchFromFirebase(env, `wna/${id}`, 'PATCH', { ...body, updatedAt: new Date().toISOString() });
+    return Response.json({ success: true, message: 'Data berhasil diupdate' }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
 async function handleDeleteWNA(request: Request, env: Env): Promise<Response> {
   try {
     const url = new URL(request.url);
     const id = url.pathname.split('/').pop();
     await fetchFromFirebase(env, `wna/${id}`, 'DELETE');
     return Response.json({ success: true, message: 'Data berhasil dihapus' }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+async function handleExportAllWNA(env: Env): Promise<Response> {
+  try {
+    const data = await fetchFromFirebase(env, 'wna');
+    const list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+    
+    const headers = ['ID', 'Nama Lengkap', 'No Paspor', 'Negara', 'Tipe Izin', 'Sponsor', 'Alamat', 'Domisili', 'Status'];
+    const rows = [headers];
+    
+    for (const item of list) {
+      rows.push([
+        item.id, item.namaLengkap || '', item.noPaspor || '', item.negara || '',
+        item.type || '', item.sponsor || '', item.alamat || '', item.domisili || '',
+        item.status || 'ACTIVE'
+      ]);
+    }
+    
+    const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const date = new Date().toISOString().split('T')[0];
+    
+    return new Response("\uFEFF" + csv, {
+      headers: { 
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename=wna_export_${date}.csv`
+      }
+    });
   } catch (error: any) {
     return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
   }
@@ -233,7 +347,10 @@ async function handleDownloadTemplate(): Promise<Response> {
     '"Jane Smith","XYZ789012","United Kingdom","ITAS","CV Lain","Jl. Test No. 456","Kota Jambi","-1.65","103.2","ACTIVE"';
   
   return new Response("\uFEFF" + csvContent, {
-    headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename=template_import_wna.csv' }
+    headers: { 
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename=template_import_wna.csv'
+    }
   });
 }
 
@@ -245,15 +362,37 @@ async function handleImportWNA(request: Request, env: Env): Promise<Response> {
     const lines = text.split(/\r?\n/);
     
     let importedCount = 0;
+    const errors: string[] = [];
+    const duplicates: string[] = [];
     
+    // Get existing passports
+    const existingData = await fetchFromFirebase(env, 'wna');
+    const existingPassports = new Set();
+    if (existingData) {
+      Object.values(existingData).forEach((item: any) => {
+        if (item.noPaspor) existingPassports.add(item.noPaspor);
+      });
+    }
+    
+    // Skip header
     for (let i = 1; i < lines.length; i++) {
       if (!lines[i].trim()) continue;
+      
       const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
-      if (values.length < 5) continue;
+      if (values.length < 5) {
+        errors.push(`Baris ${i + 1}: Data tidak lengkap`);
+        continue;
+      }
+      
+      const paspor = values[1];
+      if (existingPassports.has(paspor)) {
+        duplicates.push(paspor);
+        continue;
+      }
       
       const data = {
         namaLengkap: values[0],
-        noPaspor: values[1],
+        noPaspor: paspor,
         negara: values[2],
         type: values[3].toUpperCase(),
         sponsor: values[4] || '-',
@@ -268,10 +407,16 @@ async function handleImportWNA(request: Request, env: Env): Promise<Response> {
       
       await fetchFromFirebase(env, 'wna', 'POST', data);
       importedCount++;
+      existingPassports.add(paspor);
     }
     
-    return Response.json({ success: true, message: `Import selesai. ${importedCount} data berhasil diimport.`, data: { importedCount } }, { headers: corsHeaders });
+    return Response.json({ 
+      success: true, 
+      message: `Import selesai. ${importedCount} data berhasil diimport.`,
+      data: { importedCount, duplicateCount: duplicates.length, errorCount: errors.length, errors: errors.slice(0, 10), duplicates: duplicates.slice(0, 10) }
+    }, { headers: corsHeaders });
   } catch (error: any) {
+    console.error('Import error:', error);
     return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
   }
 }
@@ -291,6 +436,175 @@ async function handleGetUsers(env: Env): Promise<Response> {
   }
 }
 
+async function handleCreateUser(request: Request, env: Env): Promise<Response> {
+  try {
+    const { username, name, email, role, password, nip, jabatan, unitKerja, noTelepon, alamat } = await request.json();
+    
+    // Check if user exists
+    const existing = await fetchFromFirebase(env, `users/${username}`);
+    if (existing) {
+      return Response.json({ success: false, message: 'Username sudah digunakan' }, { status: 409, headers: corsHeaders });
+    }
+    
+    const hashedPassword = await hashPassword(password);
+    const userData = {
+      name, email, role, password: hashedPassword,
+      nip: nip || '', jabatan: jabatan || '', unitKerja: unitKerja || '',
+      noTelepon: noTelepon || '', alamat: alamat || '',
+      isActive: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    
+    await fetchFromFirebase(env, `users/${username}`, 'PUT', userData);
+    return Response.json({ success: true, message: 'User berhasil ditambahkan' }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+async function handleUpdateUser(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const username = url.pathname.split('/').pop();
+    const { name, email, role, nip, jabatan, unitKerja, noTelepon, alamat, isActive } = await request.json();
+    
+    const updateData: any = { updatedAt: new Date().toISOString() };
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (role !== undefined) updateData.role = role;
+    if (nip !== undefined) updateData.nip = nip;
+    if (jabatan !== undefined) updateData.jabatan = jabatan;
+    if (unitKerja !== undefined) updateData.unitKerja = unitKerja;
+    if (noTelepon !== undefined) updateData.noTelepon = noTelepon;
+    if (alamat !== undefined) updateData.alamat = alamat;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    
+    await fetchFromFirebase(env, `users/${username}`, 'PATCH', updateData);
+    return Response.json({ success: true, message: 'User berhasil diperbarui' }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+async function handleDeleteUser(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const username = url.pathname.split('/').pop();
+    await fetchFromFirebase(env, `users/${username}`, 'DELETE');
+    return Response.json({ success: true, message: 'User berhasil dihapus' }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+async function handleToggleUserStatus(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const username = url.pathname.split('/')[1];
+    const { isActive } = await request.json();
+    
+    await fetchFromFirebase(env, `users/${username}`, 'PATCH', { isActive, updatedAt: new Date().toISOString() });
+    return Response.json({ success: true, message: `Status user ${isActive ? 'diaktifkan' : 'dinonaktifkan'}` }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+// ==================== ACTIVITY LOGS ====================
+
+async function handleGetActivityLogs(request: Request, env: Env): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    const limit = parseInt(url.searchParams.get('limit') || '100');
+    
+    const logs = await fetchFromFirebase(env, 'activity_logs');
+    let logList = logs ? Object.keys(logs).map(key => ({ id: key, ...logs[key] })) : [];
+    logList = logList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+    
+    return Response.json({ success: true, data: logList, total: logList.length }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: true, data: [], total: 0 }, { headers: corsHeaders });
+  }
+}
+
+async function handleGetNotifications(request: Request, env: Env): Promise<Response> {
+  try {
+    const user = await getUserFromRequest(request, env);
+    const notifications = await fetchFromFirebase(env, `user_notifications/${user.username}`);
+    let notifList = notifications ? Object.keys(notifications).map(key => ({ id: key, ...notifications[key] })) : [];
+    notifList = notifList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 50);
+    
+    return Response.json({ success: true, data: notifList, total: notifList.length }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: true, data: [], total: 0 }, { headers: corsHeaders });
+  }
+}
+
+async function handleMarkNotificationRead(request: Request, env: Env): Promise<Response> {
+  try {
+    const user = await getUserFromRequest(request, env);
+    const url = new URL(request.url);
+    const id = url.pathname.split('/')[3];
+    
+    await fetchFromFirebase(env, `user_notifications/${user.username}/${id}`, 'PATCH', { read: true, readAt: new Date().toISOString() });
+    return Response.json({ success: true }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+async function handleGetUnreadCount(request: Request, env: Env): Promise<Response> {
+  try {
+    const user = await getUserFromRequest(request, env);
+    const notifications = await fetchFromFirebase(env, `user_notifications/${user.username}`);
+    let unreadCount = 0;
+    if (notifications) {
+      unreadCount = Object.values(notifications).filter((n: any) => !n.read).length;
+    }
+    return Response.json({ success: true, unreadCount }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: true, unreadCount: 0 }, { headers: corsHeaders });
+  }
+}
+
+// ==================== REPORTS ====================
+
+async function handleExportExcel(env: Env): Promise<Response> {
+  try {
+    const data = await fetchFromFirebase(env, 'wna');
+    const list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+    
+    const headers = ['ID', 'Nama Lengkap', 'No Paspor', 'Negara', 'Tipe Izin', 'Sponsor', 'Alamat', 'Domisili', 'Status'];
+    const rows = [headers];
+    for (const item of list) {
+      rows.push([item.id, item.namaLengkap || '', item.noPaspor || '', item.negara || '', item.type || '', item.sponsor || '', item.alamat || '', item.domisili || '', item.status || 'ACTIVE']);
+    }
+    
+    const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const date = new Date().toISOString().split('T')[0];
+    
+    return new Response("\uFEFF" + csv, {
+      headers: { 
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename=laporan_wna_${date}.csv`
+      }
+    });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
+// ==================== REGIONS ====================
+
+async function handleGetRegions(env: Env): Promise<Response> {
+  try {
+    const regions = await fetchFromFirebase(env, 'regions');
+    const regionList = regions ? Object.keys(regions).map(key => ({ id: key, ...regions[key] })) : [];
+    return Response.json({ success: true, data: regionList }, { headers: corsHeaders });
+  } catch (error: any) {
+    return Response.json({ success: false, message: error.message }, { status: 500, headers: corsHeaders });
+  }
+}
+
 // ==================== MAIN WORKER ====================
 
 export default {
@@ -299,6 +613,8 @@ export default {
     const path = url.pathname;
     const method = request.method;
     
+    console.log(`📨 ${method} ${path}`);
+    
     // Handle preflight
     if (method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
@@ -306,10 +622,18 @@ export default {
     
     // Health check
     if (path === '/api/health' && method === 'GET') {
-      return Response.json({ success: true, message: 'Server running', timestamp: new Date().toISOString() }, { headers: corsHeaders });
+      return Response.json({ 
+        success: true, 
+        message: 'Server running on Cloudflare Workers',
+        timestamp: new Date().toISOString(),
+        env: {
+          databaseURL: !!env.FIREBASE_DATABASE_URL,
+          projectId: !!env.FIREBASE_PROJECT_ID
+        }
+      }, { headers: corsHeaders });
     }
     
-    // Auth routes
+    // ==================== AUTH ROUTES ====================
     if (path === '/api/auth/login' && method === 'POST') {
       return handleLogin(request, env);
     }
@@ -317,15 +641,21 @@ export default {
       return handleVerify(request, env);
     }
     
-    // Profile routes
+    // ==================== PROFILE ROUTES ====================
     if (path === '/api/profile/me' && method === 'GET') {
       return handleGetProfile(request, env);
     }
     if (path === '/api/profile/me' && method === 'PUT') {
       return handleUpdateProfile(request, env);
     }
+    if (path === '/api/profile/me/password' && method === 'PUT') {
+      return handleChangePassword(request, env);
+    }
+    if (path === '/api/profile/me/photo' && method === 'POST') {
+      return handleUploadPhoto(request, env);
+    }
     
-    // WNA routes
+    // ==================== WNA ROUTES ====================
     if (path === '/api/wna' && method === 'GET') {
       return handleGetWNA(request, env);
     }
@@ -335,76 +665,67 @@ export default {
     if (path === '/api/wna' && method === 'POST') {
       return handleCreateWNA(request, env);
     }
-    if (path.match(/^\/api\/wna\/[^/]+$/) && method === 'DELETE') {
-      return handleDeleteWNA(request, env);
-    }
-    
-    // Export all
     if (path === '/api/wna/export/all' && method === 'GET') {
-      const data = await fetchFromFirebase(env, 'wna');
-      const list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-      const headers = ['ID', 'Nama Lengkap', 'No Paspor', 'Negara', 'Tipe Izin', 'Sponsor', 'Alamat', 'Domisili', 'Status'];
-      const rows = [headers];
-      for (const item of list) {
-        rows.push([item.id, item.namaLengkap || '', item.noPaspor || '', item.negara || '', item.type || '', item.sponsor || '', item.alamat || '', item.domisili || '', item.status || 'ACTIVE']);
-      }
-      const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-      return new Response("\uFEFF" + csv, {
-        headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename=wna_export.csv` }
-      });
+      return handleExportAllWNA(env);
     }
-    
-    // Import routes
     if (path === '/api/wna/import/template' && method === 'GET') {
       return handleDownloadTemplate();
     }
     if (path === '/api/wna/import' && method === 'POST') {
       return handleImportWNA(request, env);
     }
+    if (path.match(/^\/api\/wna\/[^/]+$/) && method === 'GET') {
+      return handleGetWNAById(request, env);
+    }
+    if (path.match(/^\/api\/wna\/[^/]+$/) && method === 'PUT') {
+      return handleUpdateWNA(request, env);
+    }
+    if (path.match(/^\/api\/wna\/[^/]+$/) && method === 'DELETE') {
+      return handleDeleteWNA(request, env);
+    }
     
-    // Users routes
+    // ==================== USERS ROUTES ====================
     if (path === '/api/users' && method === 'GET') {
       return handleGetUsers(env);
     }
-    
-    // Activity logs
-    if (path === '/api/activity/logs' && method === 'GET') {
-      const logs = await fetchFromFirebase(env, 'activity_logs');
-      const logList = logs ? Object.keys(logs).map(key => ({ id: key, ...logs[key] })).reverse() : [];
-      return Response.json({ success: true, data: logList, total: logList.length }, { headers: corsHeaders });
+    if (path === '/api/users' && method === 'POST') {
+      return handleCreateUser(request, env);
+    }
+    if (path.match(/^\/api\/users\/[^/]+\/status$/) && method === 'PUT') {
+      return handleToggleUserStatus(request, env);
+    }
+    if (path.match(/^\/api\/users\/[^/]+$/) && method === 'PUT') {
+      return handleUpdateUser(request, env);
+    }
+    if (path.match(/^\/api\/users\/[^/]+$/) && method === 'DELETE') {
+      return handleDeleteUser(request, env);
     }
     
-    // Notifications
+    // ==================== ACTIVITY ROUTES ====================
+    if (path === '/api/activity/logs' && method === 'GET') {
+      return handleGetActivityLogs(request, env);
+    }
     if (path === '/api/activity/notifications' && method === 'GET') {
-      return Response.json({ success: true, data: [], total: 0 }, { headers: corsHeaders });
+      return handleGetNotifications(request, env);
+    }
+    if (path.match(/^\/api\/activity\/notifications\/[^/]+\/read$/) && method === 'PUT') {
+      return handleMarkNotificationRead(request, env);
     }
     if (path === '/api/activity/notifications/unread/count' && method === 'GET') {
-      return Response.json({ success: true, unreadCount: 0 }, { headers: corsHeaders });
+      return handleGetUnreadCount(request, env);
     }
     
-    // Reports
+    // ==================== REPORTS ====================
     if (path === '/api/reports/export/excel' && method === 'GET') {
-      const data = await fetchFromFirebase(env, 'wna');
-      const list = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
-      const headers = ['ID', 'Nama Lengkap', 'No Paspor', 'Negara', 'Tipe Izin', 'Sponsor', 'Alamat', 'Domisili', 'Status'];
-      const rows = [headers];
-      for (const item of list) {
-        rows.push([item.id, item.namaLengkap || '', item.noPaspor || '', item.negara || '', item.type || '', item.sponsor || '', item.alamat || '', item.domisili || '', item.status || 'ACTIVE']);
-      }
-      const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-      return new Response("\uFEFF" + csv, {
-        headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename=laporan_wna.csv` }
-      });
+      return handleExportExcel(env);
     }
     
-    // Regions
+    // ==================== REGIONS ====================
     if (path === '/api/regions' && method === 'GET') {
-      const regions = await fetchFromFirebase(env, 'regions');
-      const regionList = regions ? Object.keys(regions).map(key => ({ id: key, ...regions[key] })) : [];
-      return Response.json({ success: true, data: regionList }, { headers: corsHeaders });
+      return handleGetRegions(env);
     }
     
-    // Static assets (React SPA)
+    // ==================== STATIC ASSETS ====================
     return env.ASSETS.fetch(request);
   }
 };
