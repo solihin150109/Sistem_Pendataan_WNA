@@ -26,16 +26,14 @@ async function fetchFromFirebase(env: Env, path: string, method: string = 'GET',
   return data;
 }
 
+import * as bcrypt from 'bcryptjs';
+
 async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return btoa(String.fromCharCode(...new Uint8Array(hash)));
+  return bcrypt.hash(password, 10);
 }
 
 async function comparePassword(password: string, hash: string): Promise<boolean> {
-  const hashedInput = await hashPassword(password);
-  return hashedInput === hash;
+  return bcrypt.compare(password, hash);
 }
 
 async function generateToken(user: any, env: Env): Promise<string> {
