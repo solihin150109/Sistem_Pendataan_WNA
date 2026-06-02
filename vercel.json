@@ -26,11 +26,5 @@
   "buildCommand": "cd client && npm install && npm run build",
   "outputDirectory": "client/dist",
   "devCommand": "cd client && npm run dev",
-  "framework": "vite",
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 30,
-      "memory": 1024
-    }
-  }
+  "framework": "vite"
 }
