@@ -1,177 +1,92 @@
-// src/services/GoogleMapsService.ts
-export class GoogleMapsService {
-  private static instance: GoogleMapsService;
+// client/src/services/GoogleMapsService.ts
+export interface MapOptions {
+  center: { lat: number; lng: number };
+  zoom: number;
+}
+
+export interface MarkerOptions {
+  position: { lat: number; lng: number };
+  title: string;
+  icon?: string;
+}
+
+class GoogleMapsService {
   private mapInstance: google.maps.Map | null = null;
   private markers: google.maps.Marker[] = [];
-  private isLoaded = false;
+  private infoWindow: google.maps.InfoWindow | null = null;
+  private geocoder: google.maps.Geocoder | null = null;
+  private isAPILoaded = false;
+  private loadPromise: Promise<void> | null = null;
 
-  static getInstance(): GoogleMapsService {
-    if (!GoogleMapsService.instance) {
-      GoogleMapsService.instance = new GoogleMapsService();
-    }
-    return GoogleMapsService.instance;
-  }
-
+  // Load Google Maps API
   loadAPI(apiKey: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+    if (this.isAPILoaded) {
+      return Promise.resolve();
+    }
+
+    if (this.loadPromise) {
+      return this.loadPromise;
+    }
+
+    this.loadPromise = new Promise((resolve, reject) => {
+      // Check if already loaded
       if (window.google && window.google.maps) {
-        this.isLoaded = true;
+        this.isAPILoaded = true;
+        this.geocoder = new google.maps.Geocoder();
         resolve();
         return;
       }
 
-      const oldScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
-      if (oldScript) {
-        oldScript.remove();
-      }
-
-      // Load dengan Geocoding dan Places
+      // Create script element
       const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geocoding&v=quarterly`;
+      const callbackName = 'initGoogleMaps_' + Date.now();
+      
+      (window as any)[callbackName] = () => {
+        delete (window as any)[callbackName];
+        this.isAPILoaded = true;
+        this.geocoder = new google.maps.Geocoder();
+        resolve();
+      };
+
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=${callbackName}&libraries=places`;
       script.async = true;
       script.defer = true;
-      
-      script.onload = () => {
-        const checkGoogle = setInterval(() => {
-          if (window.google && window.google.maps && window.google.maps.Geocoder) {
-            clearInterval(checkGoogle);
-            this.isLoaded = true;
-            resolve();
-          }
-        }, 100);
-        
-        setTimeout(() => {
-          clearInterval(checkGoogle);
-          if (!window.google || !window.google.maps) {
-            reject(new Error('Google Maps timeout'));
-          }
-        }, 5000);
+      script.onerror = (error) => {
+        delete (window as any)[callbackName];
+        reject(new Error('Failed to load Google Maps API'));
       };
-      
-      script.onerror = () => reject(new Error('Failed to load Google Maps'));
       document.head.appendChild(script);
     });
+
+    return this.loadPromise;
   }
 
-  initMap(element: HTMLElement, center: { lat: number; lng: number }, zoom: number = 12): google.maps.Map | null {
-    if (!element || !window.google?.maps) return null;
-
-    if (this.mapInstance) {
-      return this.mapInstance;
-    }
-
-    try {
-      this.mapInstance = new google.maps.Map(element, {
-        center,
-        zoom,
-        zoomControl: true,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: true,
-      });
-      return this.mapInstance;
-    } catch (error) {
-      console.error("Error creating map:", error);
+  // Initialize map
+  initMap(container: HTMLElement, center: { lat: number; lng: number }, zoom: number): google.maps.Map | null {
+    if (!window.google || !window.google.maps) {
+      console.error('Google Maps not loaded');
       return null;
     }
-  }
 
-  addMarker(position: { lat: number; lng: number }, title: string, iconUrl?: string): google.maps.Marker | null {
-    if (!this.mapInstance) return null;
-
-    const marker = new google.maps.Marker({
-      position,
-      map: this.mapInstance,
-      title,
-      icon: iconUrl,
+    this.mapInstance = new google.maps.Map(container, {
+      center,
+      zoom,
+      mapTypeId: google.maps.MapTypeId.ROADMAP,
+      zoomControl: true,
+      mapTypeControl: true,
+      scaleControl: true,
+      streetViewControl: true,
+      fullscreenControl: true,
     });
 
-    this.markers.push(marker);
-    return marker;
+    return this.mapInstance;
   }
 
-  addMarkerWithInfoWindow(
-    position: { lat: number; lng: number },
-    title: string,
-    content: string,
-    iconColor?: string
-  ): google.maps.Marker | null {
-    if (!this.mapInstance) return null;
-
-    let iconUrl = iconColor ? `https://maps.google.com/mapfiles/ms/icons/${iconColor}-dot.png` : undefined;
-
-    const marker = new google.maps.Marker({
-      position,
-      map: this.mapInstance,
-      title,
-      icon: iconUrl,
-    });
-
-    const infoWindow = new google.maps.InfoWindow({
-      content: `<div style="padding: 12px; max-width: 280px;">${content}</div>`,
-    });
-
-    marker.addListener('click', () => {
-      infoWindow.close();
-      infoWindow.open(this.mapInstance!, marker);
-    });
-
-    this.markers.push(marker);
-    return marker;
-  }
-
-  clearMarkers(): void {
-    this.markers.forEach(marker => marker.setMap(null));
-    this.markers = [];
-  }
-
-  // Geocoding - mencari alamat ke koordinat (menggunakan Geocoder)
-  async searchLocation(query: string): Promise<Array<{ lat: number; lng: number; address: string }>> {
-    if (!window.google || !window.google.maps) {
-      console.error("Google Maps not loaded");
-      return [];
-    }
-
-    const geocoder = new google.maps.Geocoder();
-    
-    return new Promise((resolve) => {
-      geocoder.geocode({ address: query }, (results, status) => {
-        if (status === 'OK' && results && results.length > 0) {
-          const locations = results.map(result => ({
-            lat: result.geometry.location.lat(),
-            lng: result.geometry.location.lng(),
-            address: result.formatted_address,
-          }));
-          resolve(locations);
-        } else {
-          console.log("Geocoding status:", status);
-          resolve([]);
-        }
-      });
-    });
-  }
-
-  // Reverse geocoding - koordinat ke alamat
-  async reverseGeocode(lat: number, lng: number): Promise<string> {
-    if (!window.google || !window.google.maps) return `${lat}, ${lng}`;
-
-    const geocoder = new google.maps.Geocoder();
-    
-    return new Promise((resolve) => {
-      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        if (status === 'OK' && results && results[0]) {
-          resolve(results[0].formatted_address);
-        } else {
-          resolve(`${lat}, ${lng}`);
-        }
-      });
-    });
-  }
-
+  // Get current position
   getCurrentPosition(): Promise<{ lat: number; lng: number; address: string }> {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error('Geolocation not supported'));
+        reject(new Error('Geolocation is not supported by this browser'));
         return;
       }
 
@@ -179,14 +94,32 @@ export class GoogleMapsService {
         async (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          const address = await this.reverseGeocode(lat, lng);
+          
+          let address = '';
+          if (this.geocoder) {
+            try {
+              const result = await this.geocodeLatLng(lat, lng);
+              address = result;
+            } catch (e) {
+              console.error('Geocoding error:', e);
+            }
+          }
+          
           resolve({ lat, lng, address });
         },
         (error) => {
-          let message = 'Gagal mendapatkan lokasi';
-          if (error.code === 1) message = 'Akses lokasi ditolak';
-          else if (error.code === 2) message = 'Posisi tidak tersedia';
-          else if (error.code === 3) message = 'Waktu habis';
+          let message = 'Gagal mengambil lokasi';
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              message = 'Akses lokasi ditolak';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              message = 'Informasi lokasi tidak tersedia';
+              break;
+            case error.TIMEOUT:
+              message = 'Waktu pengambilan lokasi habis';
+              break;
+          }
           reject(new Error(message));
         },
         { enableHighAccuracy: true, timeout: 10000 }
@@ -194,24 +127,141 @@ export class GoogleMapsService {
     });
   }
 
+  // Geocode lat/lng to address
+  geocodeLatLng(lat: number, lng: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!this.geocoder) {
+        reject(new Error('Geocoder not available'));
+        return;
+      }
+
+      const latlng = { lat, lng };
+      this.geocoder.geocode({ location: latlng }, (results, status) => {
+        if (status === 'OK' && results && results[0]) {
+          resolve(results[0].formatted_address);
+        } else {
+          reject(new Error('Geocoder failed: ' + status));
+        }
+      });
+    });
+  }
+
+  // Add marker
+  addMarker(position: { lat: number; lng: number }, title: string, iconUrl?: string): google.maps.Marker | null {
+    if (!this.mapInstance || !window.google) return null;
+
+    const marker = new google.maps.Marker({
+      position,
+      map: this.mapInstance,
+      title,
+      icon: iconUrl,
+      animation: google.maps.Animation.DROP,
+    });
+
+    this.markers.push(marker);
+    return marker;
+  }
+
+  // Add marker with info window
+  addMarkerWithInfoWindow(
+    position: { lat: number; lng: number },
+    title: string,
+    content: string,
+    markerColor?: string
+  ): google.maps.Marker | null {
+    if (!this.mapInstance || !window.google) return null;
+
+    // Create custom icon based on color
+    let iconUrl: string | undefined;
+    if (markerColor) {
+      const pinColor = this.getPinColor(markerColor);
+      iconUrl = `http://maps.google.com/mapfiles/ms/icons/${pinColor}.png`;
+    }
+
+    const marker = new google.maps.Marker({
+      position,
+      map: this.mapInstance,
+      title,
+      icon: iconUrl,
+      animation: google.maps.Animation.DROP,
+    });
+
+    const infoWindow = new google.maps.InfoWindow({
+      content: content,
+      maxWidth: 300,
+    });
+
+    marker.addListener('click', () => {
+      infoWindow.open(this.mapInstance, marker);
+    });
+
+    this.markers.push(marker);
+    return marker;
+  }
+
+  // Get pin color
+  private getPinColor(color: string): string {
+    const colors: Record<string, string> = {
+      blue: 'blue',
+      green: 'green',
+      yellow: 'yellow',
+      red: 'red',
+      purple: 'purple',
+      orange: 'orange',
+    };
+    return colors[color.toLowerCase()] || 'red';
+  }
+
+  // Clear all markers
+  clearMarkers(): void {
+    this.markers.forEach(marker => {
+      marker.setMap(null);
+    });
+    this.markers = [];
+  }
+
+  // Set center
+  setCenter(lat: number, lng: number, zoom?: number): void {
+    if (this.mapInstance) {
+      this.mapInstance.setCenter({ lat, lng });
+      if (zoom) {
+        this.mapInstance.setZoom(zoom);
+      }
+    }
+  }
+
+  // Fit bounds to markers
   fitBounds(points: { lat: number; lng: number }[]): void {
-    if (!this.mapInstance || points.length === 0) return;
-    
+    if (!this.mapInstance || !window.google || points.length === 0) return;
+
     const bounds = new google.maps.LatLngBounds();
-    points.forEach(point => bounds.extend(point));
+    points.forEach(point => {
+      bounds.extend(point);
+    });
     this.mapInstance.fitBounds(bounds);
   }
 
-  setCenter(lat: number, lng: number, zoom?: number): void {
-    if (!this.mapInstance) return;
-    this.mapInstance.setCenter({ lat, lng });
-    if (zoom) this.mapInstance.setZoom(zoom);
-  }
-
+  // Destroy map
   destroyMap(): void {
+    this.clearMarkers();
+    if (this.infoWindow) {
+      this.infoWindow.close();
+      this.infoWindow = null;
+    }
     if (this.mapInstance) {
-      this.clearMarkers();
       this.mapInstance = null;
     }
   }
+
+  // Get map instance
+  getMap(): google.maps.Map | null {
+    return this.mapInstance;
+  }
+
+  // Check if API is loaded
+  isLoaded(): boolean {
+    return this.isAPILoaded;
+  }
 }
+
+export const GoogleMapsService = new GoogleMapsService();

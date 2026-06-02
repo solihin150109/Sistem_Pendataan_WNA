@@ -1,7 +1,6 @@
 import { Search as SearchIcon, Globe, Navigation, Loader2, X, AlertCircle, MapPin } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api';
-import { regionBoundaries } from '../data/regionBoundaries';
 import { GoogleMapsService } from '../services/GoogleMapsService';
 
 interface WNA {
@@ -18,6 +17,9 @@ interface WNA {
   status: string;
 }
 
+// Google Maps API Key - GANTI DENGAN API KEY ASLI ANDA
+const GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
+
 export default function MapPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [wnaData, setWnaData] = useState<WNA[]>([]);
@@ -26,15 +28,13 @@ export default function MapPage() {
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [locationStatus, setLocationStatus] = useState('');
   const [mapError, setMapError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapService = useRef(GoogleMapsService.getInstance());
   const isInitialized = useRef(false);
   const dataFetched = useRef(false);
-  const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const markersDrawn = useRef(false);
 
-  // Fetch data WNA - hanya sekali
+  // Fetch data WNA
   useEffect(() => {
     if (!dataFetched.current) {
       dataFetched.current = true;
@@ -62,154 +62,92 @@ export default function MapPage() {
     }
   };
 
-  // Load Google Maps - dengan retry mechanism
+  // Load Google Maps
   useEffect(() => {
-    // Bersihkan timeout sebelumnya
-    if (initTimeoutRef.current) {
-      clearTimeout(initTimeoutRef.current);
-    }
-
     if (!isInitialized.current && !mapReady) {
       isInitialized.current = true;
       loadGoogleMaps();
     }
     
     return () => {
-      if (initTimeoutRef.current) {
-        clearTimeout(initTimeoutRef.current);
-      }
       if (isInitialized.current) {
-        mapService.current.destroyMap();
+        GoogleMapsService.destroyMap();
       }
     };
-  }, [retryCount]);
+  }, []);
 
   const loadGoogleMaps = async () => {
-    const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-    
-    if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE') {
-      setMapError("API Key Google Maps tidak dikonfigurasi");
+    // Cek API Key
+    if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
+      setMapError("API Key Google Maps belum dikonfigurasi. Silakan hubungi administrator.");
       return;
     }
 
     try {
-      await mapService.current.loadAPI(API_KEY);
-      // Tunggu sedikit untuk memastikan DOM siap
-      initTimeoutRef.current = setTimeout(() => {
+      console.log('Loading Google Maps with API Key:', GOOGLE_MAPS_API_KEY.substring(0, 10) + '...');
+      await GoogleMapsService.loadAPI(GOOGLE_MAPS_API_KEY);
+      console.log('Google Maps API loaded successfully');
+      
+      // Tunggu DOM siap
+      setTimeout(() => {
         initMap();
-      }, 200);
+      }, 500);
     } catch (error) {
       console.error('Failed to load Google Maps:', error);
-      setMapError("Gagal memuat Google Maps. Silahkan refresh halaman.");
+      setMapError("Gagal memuat Google Maps. Periksa koneksi internet atau API Key.");
       isInitialized.current = false;
     }
   };
 
   const initMap = () => {
-    // Validasi container dengan lebih teliti
     if (!mapRef.current) {
-      console.error("Map container not found - ref is null");
+      console.error("Map container not found");
       setMapError("Container peta tidak ditemukan");
-      isInitialized.current = false;
       return;
     }
 
-    // Cek apakah container benar-benar ada di DOM dan memiliki ukuran
-    const container = mapRef.current;
-    const rect = container.getBoundingClientRect();
-    
+    // Cek ukuran container
+    const rect = mapRef.current.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
       console.warn("Map container has zero size, retrying...");
-      // Retry setelah DOM benar-benar siap
-      setTimeout(() => {
-        if (mapRef.current) {
-          initMap();
-        } else {
-          setMapError("Container peta tidak ditemukan");
-        }
-      }, 300);
+      setTimeout(() => initMap(), 300);
       return;
     }
 
-    if (!window.google || !window.google.maps) {
+    if (!GoogleMapsService.isLoaded()) {
       console.error("Google Maps not available");
       setMapError("Google Maps tidak tersedia. Coba refresh halaman.");
-      isInitialized.current = false;
       return;
     }
 
     try {
       const center = { lat: -1.65, lng: 103.2 };
-      const map = mapService.current.initMap(mapRef.current, center, 9);
+      const map = GoogleMapsService.initMap(mapRef.current, center, 12);
       
       if (map) {
         setMapReady(true);
         setMapError(null);
         console.log("Map initialized successfully");
         
-        // Draw boundaries dan markers setelah map siap
+        // Draw markers setelah map siap
         setTimeout(() => {
-          drawBoundaries();
           drawMarkers();
         }, 500);
       } else {
         setMapError("Gagal menginisialisasi peta");
-        isInitialized.current = false;
       }
     } catch (error) {
       console.error("Error initializing map:", error);
       setMapError("Gagal menginisialisasi peta: " + (error as Error).message);
-      isInitialized.current = false;
-    }
-  };
-
-  const drawBoundaries = () => {
-    const map = (mapService.current as any).mapInstance;
-    if (!map || !window.google) return;
-
-    const regionColors: Record<string, string> = {
-      'Kota Jambi': '#ef4444',
-      'Kab. Sarolangun': '#10b981',
-      'Kab. Muaro Jambi': '#f59e0b',
-      'Kab. Batang Hari': '#06b6d4'
-    };
-    
-    try {
-      Object.entries(regionBoundaries).forEach(([key, region]: [string, any]) => {
-        const feature = region.features?.[0];
-        const regionName = feature?.properties?.name || key;
-        const coords = region.features?.[0]?.geometry?.coordinates;
-        const color = regionColors[regionName] || '#22c55e';
-        
-        if (coords && coords[0] && coords[0].length > 0) {
-          const path = coords[0].map((coord: [number, number]) => ({
-            lat: coord[1],
-            lng: coord[0]
-          }));
-          
-          new google.maps.Polygon({
-            paths: path,
-            strokeColor: color,
-            strokeOpacity: 1,
-            strokeWeight: 2,
-            fillColor: color,
-            fillOpacity: 0.1,
-            map: map
-          });
-        }
-      });
-    } catch (error) {
-      console.error("Error drawing boundaries:", error);
     }
   };
 
   const drawMarkers = () => {
-    if (!mapReady) {
-      console.log("Map not ready for markers");
+    if (!mapReady || markersDrawn.current) {
       return;
     }
     
-    mapService.current.clearMarkers();
+    GoogleMapsService.clearMarkers();
     
     if (wnaData.length === 0) {
       console.log("No data to display");
@@ -232,7 +170,7 @@ export default function MapPage() {
       points.push({ lat: wna.latitude, lng: wna.longitude });
       
       const content = `
-        <div style="padding: 12px; min-width: 240px;">
+        <div style="padding: 12px; min-width: 240px; font-family: Arial, sans-serif;">
           <div style="border-bottom: 2px solid #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; margin-bottom: 8px; padding-bottom: 6px;">
             <strong style="font-size: 14px;">${wna.namaLengkap}</strong>
             <span style="float: right; background: #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px;">${typeName}</span>
@@ -246,7 +184,7 @@ export default function MapPage() {
         </div>
       `;
       
-      mapService.current.addMarkerWithInfoWindow(
+      GoogleMapsService.addMarkerWithInfoWindow(
         { lat: wna.latitude, lng: wna.longitude },
         wna.namaLengkap,
         content,
@@ -255,18 +193,17 @@ export default function MapPage() {
     });
     
     if (points.length > 0) {
-      mapService.current.fitBounds(points);
+      GoogleMapsService.fitBounds(points);
     }
     
+    markersDrawn.current = true;
     console.log(`✅ ${wnaData.length} markers drawn`);
   };
 
   // Update markers when data or map ready changes
   useEffect(() => {
-    if (mapReady && wnaData.length > 0) {
-      setTimeout(() => drawMarkers(), 300);
-    } else if (mapReady && wnaData.length === 0) {
-      mapService.current.clearMarkers();
+    if (mapReady && wnaData.length > 0 && !markersDrawn.current) {
+      setTimeout(() => drawMarkers(), 500);
     }
   }, [mapReady, wnaData]);
 
@@ -286,14 +223,14 @@ export default function MapPage() {
     
     setLocationStatus("Mendapatkan lokasi...");
     
-    mapService.current.getCurrentPosition()
+    GoogleMapsService.getCurrentPosition()
       .then(({ lat, lng, address }) => {
         setLocationStatus("Lokasi ditemukan!");
         setTimeout(() => setLocationStatus(''), 2000);
-        mapService.current.setCenter(lat, lng, 15);
+        GoogleMapsService.setCenter(lat, lng, 15);
         
         // Tambah marker lokasi user
-        mapService.current.addMarker(
+        GoogleMapsService.addMarker(
           { lat, lng },
           "Lokasi Anda",
           "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
@@ -309,23 +246,16 @@ export default function MapPage() {
     if (!mapReady) return;
     if (wnaData.length > 0) {
       const points = wnaData.map(w => ({ lat: w.latitude, lng: w.longitude }));
-      mapService.current.fitBounds(points);
+      GoogleMapsService.fitBounds(points);
     } else {
-      mapService.current.setCenter(-1.65, 103.2, 9);
+      GoogleMapsService.setCenter(-1.65, 103.2, 12);
     }
   };
 
   const flyToLocation = (lat: number, lng: number) => {
     if (!mapReady) return;
-    mapService.current.setCenter(lat, lng, 16);
+    GoogleMapsService.setCenter(lat, lng, 16);
     setShowSearchPanel(false);
-  };
-
-  const handleRetry = () => {
-    setMapError(null);
-    setMapReady(false);
-    isInitialized.current = false;
-    setRetryCount(prev => prev + 1);
   };
 
   if (loading) {
@@ -404,15 +334,15 @@ export default function MapPage() {
             <span>{mapError}</span>
           </div>
           <button 
-            onClick={handleRetry}
+            onClick={() => window.location.reload()}
             className="px-3 py-1 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-bold"
           >
-            Coba Lagi
+            Refresh
           </button>
         </div>
       )}
 
-      {/* Map Container - dengan style yang lebih robust */}
+      {/* Map Container */}
       <div className="flex-1 rounded-3xl overflow-hidden border border-slate-200 shadow-2xl relative bg-slate-100">
         <div 
           ref={mapRef} 
@@ -430,6 +360,7 @@ export default function MapPage() {
           </div>
         )}
         
+        {/* Search Panel */}
         {showSearchPanel && searchTerm && filteredWNA.length > 0 && (
           <div className="absolute top-4 left-4 z-20 bg-white rounded-2xl shadow-xl border w-80 max-h-96 overflow-auto">
             <div className="p-3 border-b bg-slate-50 flex justify-between items-center sticky top-0">
