@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "pantau-asing",
+  "main": "src/api/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "FIREBASE_API_KEY": "YOUR_API_KEY",
+    "FIREBASE_AUTH_DOMAIN": "pendataanwna.firebaseapp.com",
+    "FIREBASE_PROJECT_ID": "pendataanwna",
+    "FIREBASE_DATABASE_URL": "https://pendataanwna-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "JWT_SECRET": "pantau-asing-secret-key-2024"
+  }
+}
