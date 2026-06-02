@@ -19,7 +19,7 @@ interface WNA {
 }
 
 // GANTI DENGAN API KEY ASLI ANDA
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAG22bG2DtO7tDgeLCVao8XXDRrJ-_Buv8';
+const GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
 
 export default function MapPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,7 +34,7 @@ export default function MapPage() {
   const isInitialized = useRef(false);
   const dataFetched = useRef(false);
   const markersDrawn = useRef(false);
-  const retryCount = useRef(0);
+  const boundariesDrawn = useRef(false);
 
   // Fetch data WNA
   useEffect(() => {
@@ -49,7 +49,6 @@ export default function MapPage() {
     try {
       const response = await api.getWNA({});
       if (response.success) {
-        // Filter data with valid coordinates
         const dataWithCoords = response.data.filter((wna: WNA) => 
           wna.latitude && wna.longitude && 
           !isNaN(wna.latitude) && !isNaN(wna.longitude) &&
@@ -68,17 +67,21 @@ export default function MapPage() {
 
   // Load Google Maps
   useEffect(() => {
-    if (!isInitialized.current && !mapReady && retryCount.current < 3) {
-      isInitialized.current = true;
-      loadGoogleMaps();
-    }
+    // Tunggu DOM benar-benar siap
+    const timer = setTimeout(() => {
+      if (!isInitialized.current && !mapReady) {
+        isInitialized.current = true;
+        loadGoogleMaps();
+      }
+    }, 500);
     
     return () => {
+      clearTimeout(timer);
       if (isInitialized.current) {
         GoogleMapsService.destroyMap();
       }
     };
-  }, [mapReady]);
+  }, []);
 
   const loadGoogleMaps = async () => {
     if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
@@ -92,28 +95,32 @@ export default function MapPage() {
       await GoogleMapsService.loadAPI(GOOGLE_MAPS_API_KEY);
       console.log('Google Maps API loaded successfully');
       
+      // Tunggu lebih lama untuk memastikan DOM siap
       setTimeout(() => {
         initMap();
-      }, 500);
+      }, 1000);
     } catch (error) {
       console.error('Failed to load Google Maps:', error);
       setMapError("Gagal memuat Google Maps. Periksa koneksi internet atau API Key.");
       isInitialized.current = false;
-      retryCount.current++;
     }
   };
 
   const initMap = () => {
+    // Pastikan container sudah ada di DOM
     if (!mapRef.current) {
-      console.error("Map container not found");
+      console.error("Map container not found - ref is null");
       setMapError("Container peta tidak ditemukan");
       return;
     }
 
+    // Pastikan container memiliki ukuran
     const rect = mapRef.current.getBoundingClientRect();
+    console.log("Container size:", rect.width, "x", rect.height);
+    
     if (rect.width === 0 || rect.height === 0) {
-      console.warn("Map container has zero size, retrying...");
-      setTimeout(() => initMap(), 300);
+      console.warn("Map container has zero size, waiting...");
+      setTimeout(() => initMap(), 500);
       return;
     }
 
@@ -140,7 +147,7 @@ export default function MapPage() {
         // Draw markers setelah map siap
         setTimeout(() => {
           drawMarkers();
-        }, 800);
+        }, 1000);
       } else {
         setMapError("Gagal menginisialisasi peta");
       }
@@ -152,11 +159,14 @@ export default function MapPage() {
   };
 
   const drawBoundaries = () => {
-    if (!mapReady) return;
+    if (!mapReady || boundariesDrawn.current) return;
     
     try {
       const map = GoogleMapsService.getMap();
-      if (!map) return;
+      if (!map) {
+        console.error("Map not available for boundaries");
+        return;
+      }
       
       const regionColors: Record<string, string> = {
         'Kota Jambi': '#ef4444',
@@ -165,31 +175,41 @@ export default function MapPage() {
         'Kab. Batang Hari': '#06b6d4'
       };
       
+      let boundariesCount = 0;
+      
       Object.entries(regionBoundaries).forEach(([key, region]: [string, any]) => {
-        const feature = region.features?.[0];
-        const regionName = feature?.properties?.name || key;
-        const coords = feature?.geometry?.coordinates;
-        const color = regionColors[regionName] || '#22c55e';
-        
-        if (coords && coords[0] && coords[0].length > 0) {
-          const path = coords[0].map((coord: [number, number]) => ({
-            lat: coord[1],
-            lng: coord[0]
-          }));
+        try {
+          const feature = region.features?.[0];
+          const regionName = feature?.properties?.name || key;
+          const coords = feature?.geometry?.coordinates;
+          const color = regionColors[regionName] || '#22c55e';
           
-          new google.maps.Polygon({
-            paths: path,
-            strokeColor: color,
-            strokeOpacity: 0.8,
-            strokeWeight: 2,
-            fillColor: color,
-            fillOpacity: 0.1,
-            map: map
-          });
-          
-          console.log(`✅ Boundary drawn for: ${regionName}`);
+          if (coords && coords[0] && coords[0].length > 0) {
+            const path = coords[0].map((coord: [number, number]) => ({
+              lat: coord[1],
+              lng: coord[0]
+            }));
+            
+            new google.maps.Polygon({
+              paths: path,
+              strokeColor: color,
+              strokeOpacity: 0.8,
+              strokeWeight: 2,
+              fillColor: color,
+              fillOpacity: 0.1,
+              map: map
+            });
+            
+            boundariesCount++;
+            console.log(`✅ Boundary drawn for: ${regionName}`);
+          }
+        } catch (err) {
+          console.error(`Error drawing boundary for ${key}:`, err);
         }
       });
+      
+      boundariesDrawn.current = true;
+      console.log(`✅ ${boundariesCount} boundaries drawn`);
     } catch (error) {
       console.error("Error drawing boundaries:", error);
     }
@@ -206,6 +226,7 @@ export default function MapPage() {
     }
     
     const points: { lat: number; lng: number }[] = [];
+    let markersCount = 0;
     
     wnaData.forEach(wna => {
       let markerColor = 'blue';
@@ -219,7 +240,6 @@ export default function MapPage() {
         default: markerColor = 'purple'; typeName = wna.type; break;
       }
       
-      // Validasi koordinat sebelum ditambahkan
       if (wna.latitude && wna.longitude && 
           !isNaN(wna.latitude) && !isNaN(wna.longitude) &&
           wna.latitude !== 0 && wna.longitude !== 0) {
@@ -236,9 +256,8 @@ export default function MapPage() {
             <p style="margin: 6px 0;"><strong>Paspor:</strong> ${wna.noPaspor}</p>
             <p style="margin: 6px 0;"><strong>Sponsor:</strong> ${wna.sponsor}</p>
             <p style="margin: 6px 0;"><strong>Domisili:</strong> ${wna.domisili}</p>
-            <p style="margin: 6px 0;"><strong>Alamat:</strong> ${wna.alamat}</p>
             <hr style="margin: 8px 0;">
-            <a href="https://www.google.com/maps/dir/?api=1&destination=${wna.latitude},${wna.longitude}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none;">🗺️ Buka Rute di Google Maps</a>
+            <a href="https://www.google.com/maps/dir/?api=1&destination=${wna.latitude},${wna.longitude}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none;">🗺️ Buka Rute</a>
           </div>
         `;
         
@@ -249,6 +268,7 @@ export default function MapPage() {
           markerColor
         );
         
+        markersCount++;
         console.log(`✅ Marker added: ${wna.namaLengkap} at ${wna.latitude}, ${wna.longitude}`);
       } else {
         console.warn(`⚠️ Invalid coordinates for ${wna.namaLengkap}: lat=${wna.latitude}, lng=${wna.longitude}`);
@@ -260,7 +280,7 @@ export default function MapPage() {
     }
     
     markersDrawn.current = true;
-    console.log(`✅ ${points.length} markers drawn`);
+    console.log(`✅ ${markersCount} markers drawn`);
   };
 
   // Update markers when data or map ready changes
@@ -269,6 +289,13 @@ export default function MapPage() {
       setTimeout(() => drawMarkers(), 500);
     }
   }, [mapReady, wnaData]);
+
+  // Redraw boundaries when map is ready
+  useEffect(() => {
+    if (mapReady && !boundariesDrawn.current) {
+      setTimeout(() => drawBoundaries(), 500);
+    }
+  }, [mapReady]);
 
   // Filter data untuk search
   const filteredWNA = wnaData.filter(wna => 
@@ -287,11 +314,10 @@ export default function MapPage() {
     setLocationStatus("Mendapatkan lokasi...");
     
     GoogleMapsService.getCurrentPosition()
-      .then(({ lat, lng, address }) => {
+      .then(({ lat, lng }) => {
         setLocationStatus("Lokasi ditemukan!");
         setTimeout(() => setLocationStatus(''), 2000);
         GoogleMapsService.setCenter(lat, lng, 15);
-        
         GoogleMapsService.addMarker(
           { lat, lng },
           "Lokasi Anda",
@@ -413,9 +439,9 @@ export default function MapPage() {
       <div className="flex-1 rounded-3xl overflow-hidden border border-slate-200 shadow-2xl relative bg-slate-100">
         <div 
           ref={mapRef} 
-          className="w-full h-full" 
-          style={{ minHeight: '500px', position: 'relative' }}
           id="google-map-container"
+          className="w-full h-full" 
+          style={{ minHeight: '500px', height: '100%', width: '100%' }}
         />
         
         {!mapReady && !mapError && (
