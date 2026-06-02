@@ -26,11 +26,13 @@ export default function MapPage() {
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [locationStatus, setLocationStatus] = useState('');
   const [mapError, setMapError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   
   const mapRef = useRef<HTMLDivElement>(null);
   const mapService = useRef(GoogleMapsService.getInstance());
   const isInitialized = useRef(false);
   const dataFetched = useRef(false);
+  const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch data WNA - hanya sekali
   useEffect(() => {
@@ -60,19 +62,27 @@ export default function MapPage() {
     }
   };
 
-  // Load Google Maps - hanya sekali
+  // Load Google Maps - dengan retry mechanism
   useEffect(() => {
+    // Bersihkan timeout sebelumnya
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+    }
+
     if (!isInitialized.current && !mapReady) {
       isInitialized.current = true;
       loadGoogleMaps();
     }
     
     return () => {
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+      }
       if (isInitialized.current) {
         mapService.current.destroyMap();
       }
     };
-  }, []);
+  }, [retryCount]);
 
   const loadGoogleMaps = async () => {
     const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -84,7 +94,10 @@ export default function MapPage() {
 
     try {
       await mapService.current.loadAPI(API_KEY);
-      initMap();
+      // Tunggu sedikit untuk memastikan DOM siap
+      initTimeoutRef.current = setTimeout(() => {
+        initMap();
+      }, 200);
     } catch (error) {
       console.error('Failed to load Google Maps:', error);
       setMapError("Gagal memuat Google Maps. Silahkan refresh halaman.");
@@ -93,42 +106,61 @@ export default function MapPage() {
   };
 
   const initMap = () => {
-    // Tunggu sampai DOM benar-benar siap
-    setTimeout(() => {
-      if (!mapRef.current) {
-        console.error("Map container not found");
-        setMapError("Container peta tidak ditemukan");
-        return;
-      }
+    // Validasi container dengan lebih teliti
+    if (!mapRef.current) {
+      console.error("Map container not found - ref is null");
+      setMapError("Container peta tidak ditemukan");
+      isInitialized.current = false;
+      return;
+    }
 
-      if (!window.google || !window.google.maps) {
-        console.error("Google Maps not available");
-        setMapError("Google Maps tidak tersedia");
-        return;
-      }
-
-      try {
-        const center = { lat: -1.65, lng: 103.2 };
-        const map = mapService.current.initMap(mapRef.current, center, 9);
-        
-        if (map) {
-          setMapReady(true);
-          setMapError(null);
-          console.log("Map initialized successfully");
-          
-          // Draw boundaries dan markers setelah map siap
-          setTimeout(() => {
-            drawBoundaries();
-            drawMarkers();
-          }, 500);
+    // Cek apakah container benar-benar ada di DOM dan memiliki ukuran
+    const container = mapRef.current;
+    const rect = container.getBoundingClientRect();
+    
+    if (rect.width === 0 || rect.height === 0) {
+      console.warn("Map container has zero size, retrying...");
+      // Retry setelah DOM benar-benar siap
+      setTimeout(() => {
+        if (mapRef.current) {
+          initMap();
         } else {
-          setMapError("Gagal menginisialisasi peta");
+          setMapError("Container peta tidak ditemukan");
         }
-      } catch (error) {
-        console.error("Error initializing map:", error);
+      }, 300);
+      return;
+    }
+
+    if (!window.google || !window.google.maps) {
+      console.error("Google Maps not available");
+      setMapError("Google Maps tidak tersedia. Coba refresh halaman.");
+      isInitialized.current = false;
+      return;
+    }
+
+    try {
+      const center = { lat: -1.65, lng: 103.2 };
+      const map = mapService.current.initMap(mapRef.current, center, 9);
+      
+      if (map) {
+        setMapReady(true);
+        setMapError(null);
+        console.log("Map initialized successfully");
+        
+        // Draw boundaries dan markers setelah map siap
+        setTimeout(() => {
+          drawBoundaries();
+          drawMarkers();
+        }, 500);
+      } else {
         setMapError("Gagal menginisialisasi peta");
+        isInitialized.current = false;
       }
-    }, 100);
+    } catch (error) {
+      console.error("Error initializing map:", error);
+      setMapError("Gagal menginisialisasi peta: " + (error as Error).message);
+      isInitialized.current = false;
+    }
   };
 
   const drawBoundaries = () => {
@@ -289,6 +321,13 @@ export default function MapPage() {
     setShowSearchPanel(false);
   };
 
+  const handleRetry = () => {
+    setMapError(null);
+    setMapReady(false);
+    isInitialized.current = false;
+    setRetryCount(prev => prev + 1);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-140px)]">
@@ -365,21 +404,21 @@ export default function MapPage() {
             <span>{mapError}</span>
           </div>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={handleRetry}
             className="px-3 py-1 bg-red-100 hover:bg-red-200 rounded-lg text-xs font-bold"
           >
-            Refresh Halaman
+            Coba Lagi
           </button>
         </div>
       )}
 
-      {/* Map Container - dengan key agar tidak re-render */}
+      {/* Map Container - dengan style yang lebih robust */}
       <div className="flex-1 rounded-3xl overflow-hidden border border-slate-200 shadow-2xl relative bg-slate-100">
         <div 
-          key="map-container"
           ref={mapRef} 
           className="w-full h-full" 
-          style={{ minHeight: '500px' }} 
+          style={{ minHeight: '500px', position: 'relative' }}
+          id="google-map-container"
         />
         
         {!mapReady && !mapError && (

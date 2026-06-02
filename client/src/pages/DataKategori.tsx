@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { IzinTinggalType } from '../types';
-import { Database, FileText, Plus, MapPin, Download, X, Loader2, CheckCircle2, AlertTriangle, Navigation, Shield } from 'lucide-react';
-//import { motion } from 'framer-motion';
+import { Database, FileText, Plus, MapPin, Download, X, Loader2, CheckCircle2, AlertTriangle, Navigation, Shield, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
+import ImportModal from '../components/ImportModal';
 
 interface DataKategoriProps {
   type: IzinTinggalType;
@@ -24,11 +24,12 @@ interface WNA {
 }
 
 export default function DataKategori({ type }: DataKategoriProps) {
-  const { isAdmin, user } = useAuth(); // Tambahkan ini
+  const { isAdmin, user } = useAuth();
   const [data, setData] = useState<WNA[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [selectedWNA, setSelectedWNA] = useState<WNA | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -79,7 +80,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
   };
 
   const handleExport = async () => {
-    // Export tetap bisa dilakukan oleh semua user
     setExporting(true);
     setError('');
     try {
@@ -169,7 +169,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Cek apakah user adalah Administrator
     if (!isAdmin) {
       setError('Anda tidak memiliki izin untuk menambahkan data. Hanya Administrator yang dapat menambah data.');
       setTimeout(() => setError(''), 3000);
@@ -242,7 +241,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
   };
 
   const handleDelete = async (id: string) => {
-    // Cek apakah user adalah Administrator
     if (!isAdmin) {
       setError('Anda tidak memiliki izin untuk menghapus data. Hanya Administrator yang dapat menghapus data.');
       setTimeout(() => setError(''), 3000);
@@ -268,6 +266,13 @@ export default function DataKategori({ type }: DataKategoriProps) {
   const openLocationOnMap = (wna: WNA) => {
     setSelectedWNA(wna);
     setShowLocationModal(true);
+  };
+
+  const handleImportSuccess = () => {
+    fetchData();
+    setShowImportModal(false);
+    setSuccessMessage('Data berhasil diimport');
+    setTimeout(() => setSuccessMessage(''), 3000);
   };
 
   if (loading) {
@@ -316,7 +321,6 @@ export default function DataKategori({ type }: DataKategoriProps) {
               <FileText className="h-3 w-3" />
               Registry Code: {type}
             </div>
-            {/* Role Badge */}
             <div className={`flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${isAdmin ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
               <Shield className="h-3 w-3" />
               {isAdmin ? 'Administrator (Full Access)' : 'Operator (Read Only)'}
@@ -324,7 +328,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <button
             onClick={handleExport}
             disabled={exporting}
@@ -333,6 +337,17 @@ export default function DataKategori({ type }: DataKategoriProps) {
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             {exporting ? 'Mengekspor...' : 'Export Data'}
           </button>
+          
+          {/* Tombol Import Data - Hanya untuk Admin */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-2xl font-bold text-sm hover:bg-emerald-700 transition-all"
+            >
+              <Upload className="h-4 w-4" />
+              Import Data
+            </button>
+          )}
           
           {/* Tombol Tambah Data - Hanya untuk Admin */}
           {isAdmin && (
@@ -373,7 +388,18 @@ export default function DataKategori({ type }: DataKategoriProps) {
                 {data.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center p-8 text-slate-400">
-                      Belum ada data.
+                      <div className="flex flex-col items-center gap-2">
+                        <Database className="h-12 w-12 text-slate-300" />
+                        <p>Belum ada data.</p>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setShowModal(true)}
+                            className="mt-2 text-primary-blue hover:text-primary-blue/70 text-sm font-medium"
+                          >
+                            + Tambah Data Sekarang
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -407,7 +433,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                         {isAdmin ? (
                           <button
                             onClick={() => handleDelete(item.id)}
-                            className="text-red-500 hover:text-red-700 text-sm font-medium"
+                            className="text-red-500 hover:text-red-700 text-sm font-medium transition-colors"
                           >
                             Hapus
                           </button>
@@ -444,7 +470,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                     placeholder="Masukkan nama lengkap"
                     value={formData.namaLengkap}
                     onChange={(e) => setFormData({...formData, namaLengkap: e.target.value})}
-                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue"
+                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue focus:ring-2 focus:ring-primary-blue/20 transition-all"
                     required
                   />
                 </div>
@@ -455,7 +481,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                     placeholder="Masukkan nomor paspor"
                     value={formData.noPaspor}
                     onChange={(e) => setFormData({...formData, noPaspor: e.target.value})}
-                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue"
+                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue focus:ring-2 focus:ring-primary-blue/20 transition-all font-mono"
                     required
                   />
                 </div>
@@ -466,7 +492,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                     placeholder="Masukkan negara asal"
                     value={formData.negara}
                     onChange={(e) => setFormData({...formData, negara: e.target.value})}
-                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue"
+                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue focus:ring-2 focus:ring-primary-blue/20 transition-all"
                     required
                   />
                 </div>
@@ -477,7 +503,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                     placeholder="Masukkan nama sponsor/perusahaan"
                     value={formData.sponsor}
                     onChange={(e) => setFormData({...formData, sponsor: e.target.value})}
-                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue"
+                    className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue focus:ring-2 focus:ring-primary-blue/20 transition-all"
                     required
                   />
                 </div>
@@ -489,7 +515,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                   placeholder="Masukkan alamat lengkap"
                   value={formData.alamat}
                   onChange={(e) => setFormData({...formData, alamat: e.target.value})}
-                  className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue resize-none"
+                  className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue focus:ring-2 focus:ring-primary-blue/20 transition-all resize-none"
                   rows={3}
                   required
                 />
@@ -504,7 +530,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                       placeholder="Latitude"
                       value={formData.latitude}
                       onChange={(e) => setFormData({...formData, latitude: e.target.value})}
-                      className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue font-mono text-sm"
+                      className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue focus:ring-2 focus:ring-primary-blue/20 transition-all font-mono text-sm"
                     />
                   </div>
                   <div>
@@ -513,7 +539,7 @@ export default function DataKategori({ type }: DataKategoriProps) {
                       placeholder="Longitude"
                       value={formData.longitude}
                       onChange={(e) => setFormData({...formData, longitude: e.target.value})}
-                      className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue font-mono text-sm"
+                      className="w-full p-3 border rounded-xl focus:outline-none focus:border-primary-blue focus:ring-2 focus:ring-primary-blue/20 transition-all font-mono text-sm"
                     />
                   </div>
                 </div>
@@ -531,20 +557,23 @@ export default function DataKategori({ type }: DataKategoriProps) {
                   )}
                   {gettingLocation ? 'Mengambil lokasi...' : '📍 Ambil Lokasi Saya'}
                 </button>
+                <p className="text-[10px] text-slate-400 text-center">
+                  Gunakan fitur ini untuk mengambil koordinat lokasi Anda saat ini
+                </p>
               </div>
               
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => { setShowModal(false); resetForm(); }}
-                  className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-all"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 py-3 rounded-xl bg-primary-blue text-white font-bold hover:bg-primary-blue/90 disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 rounded-xl bg-primary-blue text-white font-bold hover:bg-primary-blue/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   {submitting ? 'Menyimpan...' : 'Simpan Data'}
@@ -585,13 +614,13 @@ export default function DataKategori({ type }: DataKategoriProps) {
                   href={`https://www.google.com/maps/dir/?api=1&destination=${selectedWNA.latitude},${selectedWNA.longitude}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 text-center py-2 bg-primary-blue text-white rounded-xl text-sm font-bold"
+                  className="flex-1 text-center py-2 bg-primary-blue text-white rounded-xl text-sm font-bold hover:bg-primary-blue/90 transition-all"
                 >
                   Buka Rute di Google Maps
                 </a>
                 <button
                   onClick={() => setShowLocationModal(false)}
-                  className="flex-1 py-2 border border-slate-200 rounded-xl text-sm font-bold"
+                  className="flex-1 py-2 border border-slate-200 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all"
                 >
                   Tutup
                 </button>
@@ -600,6 +629,13 @@ export default function DataKategori({ type }: DataKategoriProps) {
           </div>
         </div>
       )}
+
+      {/* Import Modal */}
+      <ImportModal 
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={handleImportSuccess}
+      />
     </div>
   );
 }

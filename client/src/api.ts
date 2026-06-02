@@ -1,4 +1,4 @@
-// api.ts - UPDATE dengan dynamic API URL untuk Vercel
+// api.ts - Updated for Vercel deployment with import functionality
 
 // Deteksi environment untuk menentukan API URL
 const getApiBaseUrl = () => {
@@ -13,22 +13,20 @@ const getApiBaseUrl = () => {
   });
   
   if (isVercel) {
-    return '/api';  // ✅ HARUSNYA INI: relative path
+    return '';  // Empty string karena API di path yang sama
   }
   
   if (isLocalhost) {
-    return 'http://localhost:5000/api';
+    return 'http://localhost:5000';
   }
   
-  return '/api';
+  return '';
 };
 
-const API_BASE = getApiBaseUrl();
+const API_BASE_URL = getApiBaseUrl();
 
-console.log('🔧 API Base URL:', API_BASE);
+console.log('🔧 API Base URL:', API_BASE_URL);
 console.log('📍 Current origin:', window.location.origin);
-console.log('📍 Current hostname:', window.location.hostname);
-console.log('📍 Current protocol:', window.location.protocol);
 
 class APIService {
   private token: string | null = null;
@@ -52,31 +50,35 @@ class APIService {
     console.log('🗑️ Token cleared');
   }
 
-  private buildUrl(endpoint: string): string {
-    // Jika API_BASE sudah merupakan relative path (dimulai dengan '/')
-    if (API_BASE.startsWith('/')) {
-      return `${window.location.origin}${API_BASE}${endpoint}`;
+  private getApiUrl(endpoint: string): string {
+    // Gunakan API_BASE_URL yang sudah didefinisikan di scope module
+    if (API_BASE_URL) {
+      return `${API_BASE_URL}/api${endpoint}`;
     }
-    // Jika absolute URL
-    return `${API_BASE}${endpoint}`;
+    return `/api${endpoint}`;
   }
 
   private async request(endpoint: string, options: RequestInit = {}) {
     const token = this.getToken();
     const headers = new Headers(options.headers);
-    headers.set('Content-Type', 'application/json');
+    
+    // Jangan set Content-Type untuk FormData (akan diatur otomatis oleh browser)
+    if (!(options.body instanceof FormData)) {
+      headers.set('Content-Type', 'application/json');
+    }
+    
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
 
-    const url = this.buildUrl(endpoint);
+    const url = this.getApiUrl(endpoint);
+    
     console.log(`📡 Request: ${options.method || 'GET'} ${url}`);
     
     try {
       const response = await fetch(url, { 
         ...options, 
         headers,
-        mode: 'cors',
         credentials: 'include'
       });
       console.log(`📡 Response status: ${response.status}`);
@@ -113,18 +115,10 @@ class APIService {
   // ==================== AUTH ====================
   async login(username: string, password: string) {
     console.log(`🔐 Login attempt: ${username}`);
-    console.log(`📡 Posting to: ${this.buildUrl('/auth/login')}`);
-    
-    const data = await this.request('/auth/login', {
+    return this.request('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password })
     });
-    
-    if (data.token) {
-      this.setToken(data.token);
-      console.log('🔐 Login successful, token saved');
-    }
-    return data;
   }
 
   async verifyToken() {
@@ -198,7 +192,8 @@ class APIService {
 
   async exportAllWNA(): Promise<Blob> {
     const token = this.getToken();
-    const url = this.buildUrl('/wna/export/all');
+    const url = this.getApiUrl('/wna/export/all');
+    
     console.log(`📥 Exporting to: ${url}`);
     
     const response = await fetch(url, {
@@ -206,12 +201,70 @@ class APIService {
       headers: {
         'Authorization': `Bearer ${token}`
       },
-      mode: 'cors'
+      credentials: 'include'
     });
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Export failed' }));
       throw new Error(error.message || 'Export failed');
+    }
+    
+    return response.blob();
+  }
+
+  // ==================== IMPORT DATA ====================
+  async importWNA(file: File): Promise<any> {
+    console.log('📥 Importing WNA data from file:', file.name);
+    
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const url = this.getApiUrl('/wna/import');
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+        // Jangan set Content-Type, biar browser yang set dengan boundary yang benar
+      },
+      body: formData,
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'Gagal mengimport data');
+    }
+    
+    return data;
+  }
+
+  async downloadTemplate(): Promise<Blob> {
+    const token = this.getToken();
+    const url = this.getApiUrl('/wna/import/template');
+    
+    console.log('📥 Downloading template from:', url);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Download template gagal';
+      try {
+        const error = await response.json();
+        errorMessage = error.message || errorMessage;
+      } catch (e) {
+        // If response is not JSON, use text
+        errorMessage = await response.text().catch(() => errorMessage);
+      }
+      throw new Error(errorMessage);
     }
     
     return response.blob();
@@ -291,7 +344,8 @@ class APIService {
   // ==================== REPORTS ====================
   async exportReport(): Promise<Blob> {
     const token = this.getToken();
-    const url = this.buildUrl('/reports/export/pdf');
+    const url = this.getApiUrl('/reports/export/pdf');
+    
     console.log(`📥 Exporting PDF report to: ${url}`);
     
     const response = await fetch(url, {
@@ -299,7 +353,7 @@ class APIService {
       headers: {
         'Authorization': `Bearer ${token}`
       },
-      mode: 'cors'
+      credentials: 'include'
     });
     
     if (!response.ok) {
@@ -312,7 +366,8 @@ class APIService {
 
   async exportExcel(): Promise<Blob> {
     const token = this.getToken();
-    const url = this.buildUrl('/reports/export/excel');
+    const url = this.getApiUrl('/reports/export/excel');
+    
     console.log(`📥 Exporting Excel report to: ${url}`);
     
     const response = await fetch(url, {
@@ -320,7 +375,7 @@ class APIService {
       headers: {
         'Authorization': `Bearer ${token}`
       },
-      mode: 'cors'
+      credentials: 'include'
     });
     
     if (!response.ok) {
