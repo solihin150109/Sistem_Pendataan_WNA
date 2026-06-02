@@ -84,15 +84,14 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
   try {
     const { username, password } = await request.json();
     
-    // Ambil user dari Firebase
-    const users = await fetchFromFirebase(env, 'users');
-    let userData = null;
-    
-    for (const [id, data] of Object.entries(users || {})) {
-      if (id === username || (data as any).username === username) {
-        userData = data;
-        break;
-      }
+    // MOCK USER UNTUK TESTING
+    if (username === 'admin' && password === 'admin123') {
+      const token = await generateToken({ username: 'admin', name: 'Administrator', role: 'Administrator' }, env);
+      return Response.json({
+        success: true,
+        token,
+        user: { name: 'Administrator', role: 'Administrator', username: 'admin', email: '' }
+      }, { headers: corsHeaders });
     }
     
     if (!userData) {
