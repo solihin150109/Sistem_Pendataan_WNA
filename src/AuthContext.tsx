@@ -21,18 +21,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkAuth = async () => {
       console.log('🔍 Checking authentication...');
       const token = api.getToken();
-      console.log('🔍 Token exists:', !!token);
       
       if (token) {
         try {
           const response = await api.verifyToken();
-          console.log('🔍 Verify response:', response);
           if (response.success && response.user) {
             setUser(response.user);
             setIsAuthenticated(true);
-            console.log('🔍 User authenticated:', response.user.username, 'Role:', response.user.role);
+            console.log('🔍 User authenticated:', response.user.username);
           } else {
-            console.log('🔍 Token invalid, clearing...');
             api.clearToken();
           }
         } catch (error) {
@@ -41,33 +38,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       setLoading(false);
-      console.log('🔍 Auth loading complete, authenticated:', isAuthenticated);
     };
     
     checkAuth();
   }, []);
 
   const login = async (username: string, password: string) => {
-    console.log('🔐 Login function called with:', username);
     try {
       const response = await api.login(username, password);
-      console.log('🔐 Login response:', response);
-      if (response.success) {
+      if (response.success && response.token) {
+        api.setToken(response.token);
         setUser(response.user);
         setIsAuthenticated(true);
-        console.log('🔐 Login successful for:', response.user.username, 'Role:', response.user.role);
         return true;
       }
-      console.log('🔐 Login failed:', response.message);
       return false;
     } catch (error) {
-      console.error('🔐 Login error:', error);
+      console.error('Login error:', error);
       return false;
     }
   };
 
   const logout = () => {
-    console.log('🚪 Logging out...');
     api.logout();
     setIsAuthenticated(false);
     setUser(null);

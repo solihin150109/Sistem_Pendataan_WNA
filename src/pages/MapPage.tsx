@@ -1,5 +1,5 @@
 import { Search as SearchIcon, Globe, Navigation, Loader2, X, AlertCircle, MapPin } from 'lucide-react';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { GoogleMapsService } from '../services/GoogleMapsService';
 
@@ -17,7 +17,7 @@ interface WNA {
   status: string;
 }
 
-// Google Maps API Key - GANTI DENGAN API KEY ASLI ANDA
+// GANTI DENGAN API KEY ASLI ANDA
 const GOOGLE_MAPS_API_KEY = 'AIzaSyAG22bG2DtO7tDgeLCVao8XXDRrJ-_Buv8';
 
 export default function MapPage() {
@@ -34,7 +34,6 @@ export default function MapPage() {
   const dataFetched = useRef(false);
   const markersDrawn = useRef(false);
 
-  // Fetch data WNA
   useEffect(() => {
     if (!dataFetched.current) {
       dataFetched.current = true;
@@ -49,11 +48,9 @@ export default function MapPage() {
       if (response.success) {
         const dataWithCoords = response.data.filter((wna: WNA) => 
           wna.latitude && wna.longitude && 
-          !isNaN(wna.latitude) && !isNaN(wna.longitude) &&
-          wna.latitude !== 0 && wna.longitude !== 0
+          !isNaN(wna.latitude) && !isNaN(wna.longitude)
         );
         setWnaData(dataWithCoords);
-        console.log(`✅ Loaded ${dataWithCoords.length} WNA data with coordinates`);
       }
     } catch (error) {
       console.error('Error fetching WNA:', error);
@@ -62,98 +59,62 @@ export default function MapPage() {
     }
   };
 
-  // Load Google Maps
   useEffect(() => {
     if (!isInitialized.current && !mapReady) {
       isInitialized.current = true;
       loadGoogleMaps();
     }
-    
     return () => {
-      if (isInitialized.current) {
-        GoogleMapsService.destroyMap();
-      }
+      GoogleMapsService.destroyMap();
     };
   }, []);
 
   const loadGoogleMaps = async () => {
-    // Cek API Key
     if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
       setMapError("API Key Google Maps belum dikonfigurasi. Silakan hubungi administrator.");
       return;
     }
 
     try {
-      console.log('Loading Google Maps with API Key:', GOOGLE_MAPS_API_KEY.substring(0, 10) + '...');
       await GoogleMapsService.loadAPI(GOOGLE_MAPS_API_KEY);
-      console.log('Google Maps API loaded successfully');
-      
-      // Tunggu DOM siap
-      setTimeout(() => {
-        initMap();
-      }, 500);
+      setTimeout(() => initMap(), 500);
     } catch (error) {
       console.error('Failed to load Google Maps:', error);
-      setMapError("Gagal memuat Google Maps. Periksa koneksi internet atau API Key.");
+      setMapError("Gagal memuat Google Maps.");
       isInitialized.current = false;
     }
   };
 
   const initMap = () => {
-    if (!mapRef.current) {
-      console.error("Map container not found");
-      setMapError("Container peta tidak ditemukan");
-      return;
-    }
+    if (!mapRef.current) return;
 
-    // Cek ukuran container
     const rect = mapRef.current.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
-      console.warn("Map container has zero size, retrying...");
       setTimeout(() => initMap(), 300);
       return;
     }
 
     if (!GoogleMapsService.isLoaded()) {
-      console.error("Google Maps not available");
-      setMapError("Google Maps tidak tersedia. Coba refresh halaman.");
+      setMapError("Google Maps tidak tersedia.");
       return;
     }
 
     try {
       const center = { lat: -1.65, lng: 103.2 };
-      const map = GoogleMapsService.initMap(mapRef.current, center, 12);
-      
-      if (map) {
-        setMapReady(true);
-        setMapError(null);
-        console.log("Map initialized successfully");
-        
-        // Draw markers setelah map siap
-        setTimeout(() => {
-          drawMarkers();
-        }, 500);
-      } else {
-        setMapError("Gagal menginisialisasi peta");
-      }
+      GoogleMapsService.initMap(mapRef.current, center, 12);
+      setMapReady(true);
+      setMapError(null);
+      setTimeout(() => drawMarkers(), 500);
     } catch (error) {
       console.error("Error initializing map:", error);
-      setMapError("Gagal menginisialisasi peta: " + (error as Error).message);
+      setMapError("Gagal menginisialisasi peta");
     }
   };
 
   const drawMarkers = () => {
-    if (!mapReady || markersDrawn.current) {
-      return;
-    }
+    if (!mapReady || markersDrawn.current || wnaData.length === 0) return;
     
     GoogleMapsService.clearMarkers();
-    
-    if (wnaData.length === 0) {
-      console.log("No data to display");
-      return;
-    }
-    
     const points: { lat: number; lng: number }[] = [];
     
     wnaData.forEach(wna => {
@@ -170,17 +131,16 @@ export default function MapPage() {
       points.push({ lat: wna.latitude, lng: wna.longitude });
       
       const content = `
-        <div style="padding: 12px; min-width: 240px; font-family: Arial, sans-serif;">
-          <div style="border-bottom: 2px solid #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; margin-bottom: 8px; padding-bottom: 6px;">
-            <strong style="font-size: 14px;">${wna.namaLengkap}</strong>
+        <div style="padding: 12px; min-width: 240px;">
+          <div style="border-bottom: 2px solid #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; margin-bottom: 8px;">
+            <strong>${wna.namaLengkap}</strong>
             <span style="float: right; background: #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px;">${typeName}</span>
           </div>
-          <p style="margin: 6px 0;"><strong>Negara:</strong> ${wna.negara}</p>
-          <p style="margin: 6px 0;"><strong>Paspor:</strong> ${wna.noPaspor}</p>
-          <p style="margin: 6px 0;"><strong>Sponsor:</strong> ${wna.sponsor}</p>
-          <p style="margin: 6px 0;"><strong>Domisili:</strong> ${wna.domisili}</p>
-          <hr style="margin: 8px 0;">
-          <a href="https://www.google.com/maps/dir/?api=1&destination=${wna.latitude},${wna.longitude}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none;">🗺️ Buka Rute</a>
+          <p><strong>Negara:</strong> ${wna.negara}</p>
+          <p><strong>Paspor:</strong> ${wna.noPaspor}</p>
+          <p><strong>Sponsor:</strong> ${wna.sponsor}</p>
+          <hr>
+          <a href="https://www.google.com/maps/dir/?api=1&destination=${wna.latitude},${wna.longitude}" target="_blank">🗺️ Buka Rute</a>
         </div>
       `;
       
@@ -192,22 +152,16 @@ export default function MapPage() {
       );
     });
     
-    if (points.length > 0) {
-      GoogleMapsService.fitBounds(points);
-    }
-    
+    if (points.length > 0) GoogleMapsService.fitBounds(points);
     markersDrawn.current = true;
-    console.log(`✅ ${wnaData.length} markers drawn`);
   };
 
-  // Update markers when data or map ready changes
   useEffect(() => {
     if (mapReady && wnaData.length > 0 && !markersDrawn.current) {
       setTimeout(() => drawMarkers(), 500);
     }
   }, [mapReady, wnaData]);
 
-  // Filter data untuk search
   const filteredWNA = wnaData.filter(wna => 
     wna.namaLengkap.toLowerCase().includes(searchTerm.toLowerCase()) ||
     wna.negara.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -224,17 +178,11 @@ export default function MapPage() {
     setLocationStatus("Mendapatkan lokasi...");
     
     GoogleMapsService.getCurrentPosition()
-      .then(({ lat, lng, address }) => {
+      .then(({ lat, lng }) => {
         setLocationStatus("Lokasi ditemukan!");
         setTimeout(() => setLocationStatus(''), 2000);
         GoogleMapsService.setCenter(lat, lng, 15);
-        
-        // Tambah marker lokasi user
-        GoogleMapsService.addMarker(
-          { lat, lng },
-          "Lokasi Anda",
-          "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-        );
+        GoogleMapsService.addMarker({ lat, lng }, "Lokasi Anda", "https://maps.google.com/mapfiles/ms/icons/blue-dot.png");
       })
       .catch((error) => {
         setLocationStatus(error.message);
@@ -342,14 +290,8 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* Map Container */}
       <div className="flex-1 rounded-3xl overflow-hidden border border-slate-200 shadow-2xl relative bg-slate-100">
-        <div 
-          ref={mapRef} 
-          className="w-full h-full" 
-          style={{ minHeight: '500px', position: 'relative' }}
-          id="google-map-container"
-        />
+        <div ref={mapRef} className="w-full h-full" style={{ minHeight: '500px' }} />
         
         {!mapReady && !mapError && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-10">
@@ -360,25 +302,17 @@ export default function MapPage() {
           </div>
         )}
         
-        {/* Search Panel */}
         {showSearchPanel && searchTerm && filteredWNA.length > 0 && (
           <div className="absolute top-4 left-4 z-20 bg-white rounded-2xl shadow-xl border w-80 max-h-96 overflow-auto">
             <div className="p-3 border-b bg-slate-50 flex justify-between items-center sticky top-0">
               <span className="text-xs font-bold">Hasil: {filteredWNA.length}</span>
-              <button 
-                onClick={() => setShowSearchPanel(false)}
-                className="p-1 hover:bg-slate-200 rounded-lg"
-              >
+              <button onClick={() => setShowSearchPanel(false)} className="p-1 hover:bg-slate-200 rounded-lg">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="divide-y">
               {filteredWNA.slice(0, 20).map((wna) => (
-                <div 
-                  key={wna.id} 
-                  className="p-3 hover:bg-slate-50 cursor-pointer"
-                  onClick={() => flyToLocation(wna.latitude, wna.longitude)}
-                >
+                <div key={wna.id} className="p-3 hover:bg-slate-50 cursor-pointer" onClick={() => flyToLocation(wna.latitude, wna.longitude)}>
                   <div className="font-bold text-sm flex items-center justify-between">
                     {wna.namaLengkap}
                     <span className="text-xs text-slate-400">{wna.type}</span>
@@ -394,7 +328,6 @@ export default function MapPage() {
           </div>
         )}
         
-        {/* Legend */}
         <div className="absolute bottom-4 right-4 z-20 bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-lg border border-slate-200">
           <div className="text-xs font-bold mb-2">Legenda</div>
           <div className="flex flex-col gap-1.5">

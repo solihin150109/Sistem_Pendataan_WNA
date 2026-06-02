@@ -1,14 +1,8 @@
 // client/src/services/GoogleMapsService.ts
 
-export interface MapOptions {
-  center: { lat: number; lng: number };
-  zoom: number;
-}
-
-class GoogleMapsServiceClass {
+export class GoogleMapsServiceClass {
   private mapInstance: google.maps.Map | null = null;
   private markers: google.maps.Marker[] = [];
-  private infoWindow: google.maps.InfoWindow | null = null;
   private geocoder: google.maps.Geocoder | null = null;
   private isAPILoaded = false;
   private loadPromise: Promise<void> | null = null;
@@ -166,15 +160,8 @@ class GoogleMapsServiceClass {
       animation: google.maps.Animation.DROP,
     });
 
-    const infoWindow = new google.maps.InfoWindow({
-      content,
-      maxWidth: 300,
-    });
-
-    marker.addListener('click', () => {
-      infoWindow.open(this.mapInstance, marker);
-    });
-
+    const infoWindow = new google.maps.InfoWindow({ content, maxWidth: 300 });
+    marker.addListener('click', () => infoWindow.open(this.mapInstance, marker));
     this.markers.push(marker);
     return marker;
   }
@@ -201,10 +188,6 @@ class GoogleMapsServiceClass {
 
   destroyMap(): void {
     this.clearMarkers();
-    if (this.infoWindow) {
-      this.infoWindow.close();
-      this.infoWindow = null;
-    }
     if (this.mapInstance) {
       this.mapInstance = null;
     }
@@ -219,5 +202,4 @@ class GoogleMapsServiceClass {
   }
 }
 
-// Hanya export instance, jangan deklarasi ulang
-export const GoogleMapsService = new GoogleMapsServiceClass();
+export const GoogleMapsService = new GoogleMapsServiceClass();  
