@@ -83,6 +83,22 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
   try {
     const { username, password } = await request.json();
     console.log(`🔐 Login attempt: ${username}`);
+
+    // MOCK USER UNTUK TESTING DULU
+    // Ini bypass database, langsung login sukses
+    if (username === 'admin' && password === 'admin123') {
+      console.log('✅ Using mock login (temporary)');
+      const token = await generateToken({ 
+        username: 'admin', 
+        name: 'Administrator', 
+        role: 'Administrator' 
+      }, env);
+      return Response.json({
+        success: true,
+        token,
+        user: { name: 'Administrator', role: 'Administrator', username: 'admin', email: '' }
+      }, { headers: corsHeaders });
+    }
     
     // Ambil user dari Firebase
     const users = await fetchFromFirebase(env, 'users');
