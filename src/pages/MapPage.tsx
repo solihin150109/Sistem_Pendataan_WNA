@@ -1,7 +1,8 @@
 import { Search as SearchIcon, Globe, Navigation, Loader2, X, AlertCircle, MapPin } from 'lucide-react';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { GoogleMapsService } from '../services/GoogleMapsService';
+import { regionBoundaries } from '../data/regionBoundaries';
 
 interface WNA {
   id: string;
@@ -17,51 +18,8 @@ interface WNA {
   status: string;
 }
 
-interface Region {
-  id: string;
-  name: string;
-  displayName: string;
-  coordinates?: [number, number][];
-}
-
 // GANTI DENGAN API KEY ASLI ANDA
 const GOOGLE_MAPS_API_KEY = 'AIzaSyAG22bG2DtO7tDgeLCVao8XXDRrJ-_Buv8';
-
-// Region boundaries data
-const regionBoundaries: Record<string, any> = {
-  'Kota Jambi': {
-    features: [{
-      geometry: {
-        coordinates: [[[103.55, -1.65], [103.56, -1.66], [103.54, -1.67], [103.53, -1.65], [103.55, -1.65]]]
-      },
-      properties: { name: 'Kota Jambi' }
-    }]
-  },
-  'Kab. Sarolangun': {
-    features: [{
-      geometry: {
-        coordinates: [[[102.8, -2.3], [102.9, -2.35], [102.85, -2.4], [102.75, -2.35], [102.8, -2.3]]]
-      },
-      properties: { name: 'Kab. Sarolangun' }
-    }]
-  },
-  'Kab. Muaro Jambi': {
-    features: [{
-      geometry: {
-        coordinates: [[[103.6, -1.55], [103.7, -1.6], [103.65, -1.65], [103.55, -1.6], [103.6, -1.55]]]
-      },
-      properties: { name: 'Kab. Muaro Jambi' }
-    }]
-  },
-  'Kab. Batang Hari': {
-    features: [{
-      geometry: {
-        coordinates: [[[103.1, -1.9], [103.2, -1.95], [103.15, -2.0], [103.05, -1.95], [103.1, -1.9]]]
-      },
-      properties: { name: 'Kab. Batang Hari' }
-    }]
-  }
-};
 
 export default function MapPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,8 +29,6 @@ export default function MapPage() {
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [locationStatus, setLocationStatus] = useState('');
   const [mapError, setMapError] = useState<string | null>(null);
-  const [boundsDrawn, setBoundsDrawn] = useState(false);
-  const [regions, setRegions] = useState<Region[]>([]);
   
   const mapRef = useRef<HTMLDivElement>(null);
   const isInitialized = useRef(false);
@@ -98,8 +54,7 @@ export default function MapPage() {
           wna.latitude && wna.longitude && 
           !isNaN(wna.latitude) && !isNaN(wna.longitude) &&
           wna.latitude >= -90 && wna.latitude <= 90 &&
-          wna.longitude >= -180 && wna.longitude <= 180 &&
-          wna.latitude !== 0 && wna.longitude !== 0
+          wna.longitude >= -180 && wna.longitude <= 180
         );
         setWnaData(dataWithCoords);
         console.log(`✅ Loaded ${dataWithCoords.length} valid WNA data with coordinates`);
@@ -133,11 +88,10 @@ export default function MapPage() {
     }
 
     try {
-      console.log('Loading Google Maps with API Key...');
+      console.log('Loading Google Maps...');
       await GoogleMapsService.loadAPI(GOOGLE_MAPS_API_KEY);
       console.log('Google Maps API loaded successfully');
       
-      // Tunggu DOM benar-benar siap
       setTimeout(() => {
         initMap();
       }, 500);
@@ -156,7 +110,6 @@ export default function MapPage() {
       return;
     }
 
-    // Cek ukuran container
     const rect = mapRef.current.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
       console.warn("Map container has zero size, retrying...");
@@ -199,9 +152,12 @@ export default function MapPage() {
   };
 
   const drawBoundaries = () => {
-    if (!mapReady || boundsDrawn.current) return;
+    if (!mapReady) return;
     
     try {
+      const map = GoogleMapsService.getMap();
+      if (!map) return;
+      
       const regionColors: Record<string, string> = {
         'Kota Jambi': '#ef4444',
         'Kab. Sarolangun': '#10b981',
@@ -209,7 +165,7 @@ export default function MapPage() {
         'Kab. Batang Hari': '#06b6d4'
       };
       
-      Object.entries(regionBoundaries).forEach(([key, region]) => {
+      Object.entries(regionBoundaries).forEach(([key, region]: [string, any]) => {
         const feature = region.features?.[0];
         const regionName = feature?.properties?.name || key;
         const coords = feature?.geometry?.coordinates;
@@ -224,17 +180,16 @@ export default function MapPage() {
           new google.maps.Polygon({
             paths: path,
             strokeColor: color,
-            strokeOpacity: 1,
+            strokeOpacity: 0.8,
             strokeWeight: 2,
             fillColor: color,
             fillOpacity: 0.1,
-            map: GoogleMapsService.getMap()
+            map: map
           });
+          
+          console.log(`✅ Boundary drawn for: ${regionName}`);
         }
       });
-      
-      setBoundsDrawn(true);
-      console.log("✅ Boundaries drawn");
     } catch (error) {
       console.error("Error drawing boundaries:", error);
     }
@@ -264,29 +219,40 @@ export default function MapPage() {
         default: markerColor = 'purple'; typeName = wna.type; break;
       }
       
-      points.push({ lat: wna.latitude, lng: wna.longitude });
-      
-      const content = `
-        <div style="padding: 12px; min-width: 240px; font-family: Arial, sans-serif;">
-          <div style="border-bottom: 2px solid #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; margin-bottom: 8px; padding-bottom: 6px;">
-            <strong style="font-size: 14px;">${wna.namaLengkap}</strong>
-            <span style="float: right; background: #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px;">${typeName}</span>
+      // Validasi koordinat sebelum ditambahkan
+      if (wna.latitude && wna.longitude && 
+          !isNaN(wna.latitude) && !isNaN(wna.longitude) &&
+          wna.latitude !== 0 && wna.longitude !== 0) {
+        
+        points.push({ lat: wna.latitude, lng: wna.longitude });
+        
+        const content = `
+          <div style="padding: 12px; min-width: 240px; font-family: Arial, sans-serif;">
+            <div style="border-bottom: 2px solid #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; margin-bottom: 8px; padding-bottom: 6px;">
+              <strong style="font-size: 14px;">${wna.namaLengkap}</strong>
+              <span style="float: right; background: #${markerColor === 'blue' ? '3b82f6' : markerColor === 'green' ? '10b981' : markerColor === 'yellow' ? 'f59e0b' : 'ef4444'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px;">${typeName}</span>
+            </div>
+            <p style="margin: 6px 0;"><strong>Negara:</strong> ${wna.negara}</p>
+            <p style="margin: 6px 0;"><strong>Paspor:</strong> ${wna.noPaspor}</p>
+            <p style="margin: 6px 0;"><strong>Sponsor:</strong> ${wna.sponsor}</p>
+            <p style="margin: 6px 0;"><strong>Domisili:</strong> ${wna.domisili}</p>
+            <p style="margin: 6px 0;"><strong>Alamat:</strong> ${wna.alamat}</p>
+            <hr style="margin: 8px 0;">
+            <a href="https://www.google.com/maps/dir/?api=1&destination=${wna.latitude},${wna.longitude}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none;">🗺️ Buka Rute di Google Maps</a>
           </div>
-          <p style="margin: 6px 0;"><strong>Negara:</strong> ${wna.negara}</p>
-          <p style="margin: 6px 0;"><strong>Paspor:</strong> ${wna.noPaspor}</p>
-          <p style="margin: 6px 0;"><strong>Sponsor:</strong> ${wna.sponsor}</p>
-          <p style="margin: 6px 0;"><strong>Domisili:</strong> ${wna.domisili}</p>
-          <hr style="margin: 8px 0;">
-          <a href="https://www.google.com/maps/dir/?api=1&destination=${wna.latitude},${wna.longitude}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none;">🗺️ Buka Rute di Google Maps</a>
-        </div>
-      `;
-      
-      GoogleMapsService.addMarkerWithInfoWindow(
-        { lat: wna.latitude, lng: wna.longitude },
-        wna.namaLengkap,
-        content,
-        markerColor
-      );
+        `;
+        
+        GoogleMapsService.addMarkerWithInfoWindow(
+          { lat: wna.latitude, lng: wna.longitude },
+          wna.namaLengkap,
+          content,
+          markerColor
+        );
+        
+        console.log(`✅ Marker added: ${wna.namaLengkap} at ${wna.latitude}, ${wna.longitude}`);
+      } else {
+        console.warn(`⚠️ Invalid coordinates for ${wna.namaLengkap}: lat=${wna.latitude}, lng=${wna.longitude}`);
+      }
     });
     
     if (points.length > 0) {
@@ -294,7 +260,7 @@ export default function MapPage() {
     }
     
     markersDrawn.current = true;
-    console.log(`✅ ${wnaData.length} markers drawn`);
+    console.log(`✅ ${points.length} markers drawn`);
   };
 
   // Update markers when data or map ready changes
@@ -326,7 +292,6 @@ export default function MapPage() {
         setTimeout(() => setLocationStatus(''), 2000);
         GoogleMapsService.setCenter(lat, lng, 15);
         
-        // Tambah marker lokasi user
         GoogleMapsService.addMarker(
           { lat, lng },
           "Lokasi Anda",
@@ -342,8 +307,14 @@ export default function MapPage() {
   const resetMapView = () => {
     if (!mapReady) return;
     if (wnaData.length > 0) {
-      const points = wnaData.map(w => ({ lat: w.latitude, lng: w.longitude }));
-      GoogleMapsService.fitBounds(points);
+      const points = wnaData
+        .filter(w => w.latitude && w.longitude && !isNaN(w.latitude) && !isNaN(w.longitude))
+        .map(w => ({ lat: w.latitude, lng: w.longitude }));
+      if (points.length > 0) {
+        GoogleMapsService.fitBounds(points);
+      } else {
+        GoogleMapsService.setCenter(-1.65, 103.2, 9);
+      }
     } else {
       GoogleMapsService.setCenter(-1.65, 103.2, 9);
     }
@@ -439,7 +410,6 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* Map Container */}
       <div className="flex-1 rounded-3xl overflow-hidden border border-slate-200 shadow-2xl relative bg-slate-100">
         <div 
           ref={mapRef} 
@@ -457,7 +427,6 @@ export default function MapPage() {
           </div>
         )}
         
-        {/* Search Panel */}
         {showSearchPanel && searchTerm && filteredWNA.length > 0 && (
           <div className="absolute top-4 left-4 z-20 bg-white rounded-2xl shadow-xl border w-80 max-h-96 overflow-auto">
             <div className="p-3 border-b bg-slate-50 flex justify-between items-center sticky top-0">
@@ -491,7 +460,6 @@ export default function MapPage() {
           </div>
         )}
         
-        {/* Legend */}
         <div className="absolute bottom-4 right-4 z-20 bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-lg border border-slate-200">
           <div className="text-xs font-bold mb-2">Legenda</div>
           <div className="flex flex-col gap-1.5">
