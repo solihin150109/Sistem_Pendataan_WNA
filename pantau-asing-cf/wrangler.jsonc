@@ -8,5 +8,12 @@
     "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "FIREBASE_DATABASE_URL": "https://pendataanwna-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "FIREBASE_PROJECT_ID": "pendataanwna",
+    "FIREBASE_CLIENT_EMAIL": "firebase-adminsdk-fbsvc@pendataanwna.iam.gserviceaccount.com",
+    "FIREBASE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCj0rspqVNlRaUw\nnyTdj4RxqxRBy8nSpX2mZ2MJLUndrgEcLm6lw0Ec7qkKJy1LzBXRDjTH2hjvul0A\nLcidHs67UpWpdeVqGZNiPT1Y8/yfXttlHktC4FGko7KWIXgYY3CtgBfVbyDiw9ft\n3D7g89iYAnfylBv5Lw5uVjjLwsmxmv5NDgzUs2P8oqOl95qXqjXMn2R9i/5vsbuQ\nIoyGmJhib360cky0SRXPA5ZhaiXMcpLsM1LoZsZUVSWX/E75VTzhrEW8cyglL7ac\nQ/dQCv9IXzmKVHGxPAY9P7UVOrkfEzGX+nAfVezMuh5y9TGlYXM+y9EzB8VvSoT6\npN0OeIRJAgMBAAECggEAAeMvxkGVJRiUBrcWUGWhVk6P5u+GqGgSkd8IBXW0dYCh\nyfXat9Emskj60l93IihQz8Joe360h7VFceWDr+W8rGyaud3kBnfkYD7yhBB2qXva\ngAV/N3CC3hy2Ezs7tmryspkKAZ8sZmQTkI2o8bWBJdAcjxTDiab+klHR2qdRQbYu\n4E0TBO05PXPBckWNtiJVyU9xPWs1c+k+pfjheLv0tpJahrEYs2ziS7kVfzBuFzyo\n3F5hk3O0V64Os3dI60YDA8ePFVJ1R8dXCjdtnmWTryL29h9z+HqloOMRPc+s4UKR\nFM8K8wWjOSjs3XrDYFxBCD/J10CzNmMqFyTiM++RlQKBgQDUJjBsM4CwrPFBMKmF\nz8Ayag5O7Ts9OGrCI5vidoP4iTenedKyT//uyb9o/oEbwkZYuH6igKIXMoC12zIl\nbMU0lKJ6ui/30BwLdHpT9VDloFZrdIaMB1QGOviZaJnYNiW6MfQ6K148IuL06Vqa\n9MZ/1lnhii9/+HX3iTA3cV1UHQKBgQDFr2KzaF1bBBaD5gdjjWPy8DthyZWxdrgU\nJHZFSDV7rV3XiYhQnppizVmGKU49qfgqqHhV0HnNZml0f84vXr0DDBQ4BTr+cZPD\nx0l5byRQ+J8+sc7h7yOM3JnOZ/o8cziSYwvhF+pC0CXrYO/aR3ku5LX90t9HnX31\nN201hXNhHQKBgQCbyPNT8Tn2AvkiEtbZcSZEnwakxKX0ncIfj8B/uuHMFw8sR1QG\nJqLcuX96XTF3reC0c75iHC1q9WX4pN6dBtOFegQaNTDWPBbr/nt5vbHK/UOYorfO\nie8UqCc3l80pLRHlOZuLP59yb3fTuqwTD93XsBLOgQfCZDRUMoSaof+TrQKBgQCz\nklnKNud2ogQB1Japq+o66FZIweEkz37vbR+yV6GdsyInhFs7QJdlYLwNzr+v7BHu\nThLhgPrjxj/M/7u/9AMmHXbQXI/2Sh28He90S61lkDK3tLUFL0HP1yQwBuuctd2R\nvD8yPZMjFgkcA3Zdhcdi/YcEBuWkHEAq3CpsD8l7UQKBgDAy9tvyrP2O/rAbDfca\nRrd2o2W4l/iBt66a4xeAoA8yhzrJMQoJgtdZ0sy2Ni1wUTFblECvo6Y0q0BL1zgP\nX4qUAfx2Ji52vtuzcqxsGJv3IRIvs2f4KAbFpUaBeuj5lCValv9ahEdWUqZYcJJT\nANP3Qv2J4lVae66CVxQPEKyl\n-----END PRIVATE KEY-----\n",
+    "JWT_SECRET": "pantau-asing-secret-key-2024"
   }
 }
