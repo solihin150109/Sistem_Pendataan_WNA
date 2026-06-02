@@ -18,7 +18,7 @@ interface WNA {
 }
 
 // Google Maps API Key - GANTI DENGAN API KEY ASLI ANDA
-const GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
+const GOOGLE_MAPS_API_KEY = 'AIzaSyAG22bG2DtO7tDgeLCVao8XXDRrJ-_Buv8';
 
 export default function MapPage() {
   const [searchTerm, setSearchTerm] = useState('');

@@ -60,29 +60,32 @@ class APIService {
 
   private async request(endpoint: string, options: RequestInit = {}) {
     const token = this.getToken();
+    console.log('🔑 Token exists:', !!token);
+    console.log('🔑 Token value (first 20 chars):', token?.substring(0, 20));
+    
     const headers = new Headers(options.headers);
     
-    // Jangan set Content-Type untuk FormData
     if (!(options.body instanceof FormData)) {
       headers.set('Content-Type', 'application/json');
     }
     
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
+      console.log('🔑 Authorization header set');
+    } else {
+      console.warn('⚠️ No token available!');
     }
-
+  
     const url = this.getApiUrl(endpoint);
-    
     console.log(`📡 ${options.method || 'GET'} ${url}`);
     
-    try {
-      const response = await fetch(url, { 
-        ...options, 
-        headers,
-        credentials: 'include'
-      });
-      
-      console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+    const response = await fetch(url, { 
+      ...options, 
+      headers,
+      credentials: 'include'
+    });
+    
+    console.log(`📡 Response status: ${response.status}`);
       
       // Handle blob responses (exports)
       if (endpoint.includes('/export')) {
